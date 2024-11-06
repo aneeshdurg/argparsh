@@ -64,8 +64,20 @@ class New(Command):
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
         parser.add_argument("name", help="Name of script")
-        parser.add_argument("-d", "--description", help="Description of program", action="store", default="")
-        parser.add_argument("-e", "--epilog", help="Text to display after help text", action="store", default="")
+        parser.add_argument(
+            "-d",
+            "--description",
+            help="Description of program",
+            action="store",
+            default="",
+        )
+        parser.add_argument(
+            "-e",
+            "--epilog",
+            help="Text to display after help text",
+            action="store",
+            default="",
+        )
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
@@ -164,7 +176,12 @@ class SubparserInit(Command):
 
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument("--metaname", help="Optional name for argument", required=False, default=None)
+        parser.add_argument(
+            "--metaname",
+            help="Optional name for argument",
+            required=False,
+            default=None,
+        )
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
@@ -192,7 +209,12 @@ class SubparserAdd(Command):
 
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument("--metaname", help="Name of subparser to add to (from subparser_init)", required=False, default=None)
+        parser.add_argument(
+            "--metaname",
+            help="Name of subparser to add to (from subparser_init)",
+            required=False,
+            default=None,
+        )
         parser.add_argument("name", help="Name of command")
 
     @classmethod
@@ -229,7 +251,12 @@ def main():
     p = subparsers.add_parser("parse", help="Parse command line arguments")
     p.set_defaults(command=None)
     p.add_argument("state", help="Parser program constructed by argparsh calls")
-    p.add_argument("--format", default="shell", choices=["shell"], help="Output format of parsed arguments")
+    p.add_argument(
+        "--format",
+        default="shell",
+        choices=["shell"],
+        help="Output format of parsed arguments",
+    )
 
     args, unconsumed = parser.parse_known_args()
     if args.command is not None and not args.command.consumes_rest_args():
