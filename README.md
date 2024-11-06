@@ -11,16 +11,31 @@ from any shell.
 ## Usage
 
 ```bash
-# Create a state variable for the parser
-parser=""
-parser=${python -m argparsh $parser add_arg myarg)
+# Create a parser that accepts a string and an optional int value
+parser=$({
+    # Initialize the parser with the name of the script and a description
+    argparsh new $0 -d "Example parser"
+
+    # Add a positional argument - note that args after -- are options to add_arg
+    # and not aliases for the argument
+    argparsh add_arg strarg -- --help "My string argument"
+
+    # Add a keyword argument that can either be -i <value> or --intarg <value>
+    argparsh add_arg -i --intarg -- \
+        --help "My int argument" \
+        --type int \
+        --default
+})
 
 # Parse the input arguments with the parser above
-eval $(python -m argparsh $parser parse "$@")
+eval $(argparsh parse $parser "$@")
 
 # Access parsed arguments by name
-echo $MYARG
+echo "String argument was" $STRARG
+echo "Integer argument was" $INTARG
 ```
+
+See `example.sh` for a more complete example.
 
 ### TODO
 

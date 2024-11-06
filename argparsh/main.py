@@ -21,6 +21,11 @@ class Command(metaclass=Watcher):
         pass
 
     @classmethod
+    @abstractmethod
+    def help(cls) -> str:
+        pass
+
+    @classmethod
     def requires_subparser_arg(cls) -> bool:
         return False
 
@@ -53,10 +58,14 @@ class New(Command):
         return "new"
 
     @classmethod
+    def help(cls):
+        return "Create a new parser with a name and description"
+
+    @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument("name")
-        parser.add_argument("-d", "--description", action="store", default="")
-        parser.add_argument("-e", "--epilog", action="store", default="")
+        parser.add_argument("name", help="Name of script")
+        parser.add_argument("-d", "--description", help="Description of program", action="store", default="")
+        parser.add_argument("-e", "--epilog", help="Text to display after help text", action="store", default="")
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
@@ -76,6 +85,10 @@ class AddArg(Command):
     @classmethod
     def name(cls):
         return "add_arg"
+
+    @classmethod
+    def help(cls):
+        return "Add an argument to the parser (separate argument aliases and parsing options with '--' )"
 
     @classmethod
     def requires_subparser_arg(cls) -> bool:
@@ -113,6 +126,10 @@ class SetDefault(Command):
         return "set_defaults"
 
     @classmethod
+    def help(cls):
+        return "Set defaults for parser with key/value pairs"
+
+    @classmethod
     def requires_subparser_arg(cls) -> bool:
         return True
 
@@ -138,12 +155,16 @@ class SubparserInit(Command):
         return "subparser_init"
 
     @classmethod
+    def help(cls):
+        return "Initialize a new subparser"
+
+    @classmethod
     def consumes_rest_args(cls) -> bool:
         return True
 
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument("--metaname", required=False, default=None)
+        parser.add_argument("--metaname", help="Optional name for argument", required=False, default=None)
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
@@ -162,13 +183,17 @@ class SubparserAdd(Command):
         return "subparser_add"
 
     @classmethod
+    def help(cls):
+        return "Add a command to a subparser"
+
+    @classmethod
     def consumes_rest_args(cls) -> bool:
         return True
 
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument("--metaname", required=False, default=None)
-        parser.add_argument("name")
+        parser.add_argument("--metaname", help="Name of subparser to add to (from subparser_init)", required=False, default=None)
+        parser.add_argument("name", help="Name of command")
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
@@ -186,7 +211,7 @@ def main():
     subparsers = parser.add_subparsers(required=True)
 
     for command in commands.values():
-        p = subparsers.add_parser(command.name())
+        p = subparsers.add_parser(command.name(), help=command.help())
         p.set_defaults(command=command)
         if command.requires_subparser_arg():
             p.add_argument(
@@ -201,9 +226,10 @@ def main():
             )
         command.extend_parser(p)
 
-    p = subparsers.add_parser("parse")
+    p = subparsers.add_parser("parse", help="Parse command line arguments")
     p.set_defaults(command=None)
-    p.add_argument("state")
+    p.add_argument("state", help="Parser program constructed by argparsh calls")
+    p.add_argument("--format", default="shell", choices=["shell"], help="Output format of parsed arguments")
 
     args, unconsumed = parser.parse_known_args()
     if args.command is not None and not args.command.consumes_rest_args():
