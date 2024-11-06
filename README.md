@@ -24,7 +24,7 @@ parser=$({
     argparsh add_arg -i --intarg -- \
         --help "My int argument" \
         --type int \
-        --default
+        --default 10
 })
 
 # Parse the input arguments with the parser above
