@@ -39,7 +39,6 @@ See `example.sh` for a more complete example.
 
 ### TODO
 
-+ Subparsers
 + Support for more output formats (fish, JSON, ...)
 
 ## Installation
@@ -47,5 +46,13 @@ See `example.sh` for a more complete example.
 No dependencies besides python/pip.
 
 ```sh
+pip install argparsh
+```
+
+Or, to build from source:
+
+```sh
+git clone https://github.com/aneeshdurg/argparsh.git
+cd argparsh
 pip install .
 ```
