@@ -22,6 +22,8 @@ dependencies = []
 "Homepage" = "https://github.com/aneeshdurg/argparsh"
 "Bug Tracker" = "https://github.com/aneeshdurg/argparsh/issues"
 
+[project.scripts]
+argparsh = "argparsh.main:main"
 
 [tool.pyright]
 exclude = ["**/__pycache__"]

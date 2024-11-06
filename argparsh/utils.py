@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 import uuid
 
 
-def append_to_state(state: str, method: str, data):
+def output(method: str, data):
     bytes_ = pickle.dumps((method, data))
-    return state + "+" + urllib.parse.quote_from_bytes(bytes_)
+    return "+" + urllib.parse.quote_from_bytes(bytes_)
 
 
 def parse_state(state: str):
