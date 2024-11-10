@@ -28,14 +28,15 @@ parser=$({
 })
 
 # Parse the input arguments with the parser above
-eval $(argparsh parse $parser "$@")
+eval $(argparsh parse $parser -- "$@")
 
 # Access parsed arguments by name
-echo "String argument was" $STRARG
-echo "Integer argument was" $INTARG
+echo "String argument was" $strarg
+echo "Integer argument was" $intarg
 ```
 
-See `example.sh` for a more complete example.
+See `example.sh` for a more complete example, and examples of alternate output
+formats (e.g. parsing CLI arguments into an associative array)
 
 ### TODO
 
@@ -56,3 +57,14 @@ git clone https://github.com/aneeshdurg/argparsh.git
 cd argparsh
 pip install .
 ```
+
+## Similar Works
+
++ [getopts](https://man7.org/linux/man-pages/man1/getopts.1p.html)
+    - the OG argument handling utility. A bit clunky to use.
++ [argparse.sh](https://github.com/yaacov/argparse-sh)
+    - similar approach, but not completely shell agnostic, and lacking in more
+      advanced features, like subcommands.
++ [fish argparse](https://fishshell.com/docs/current/cmds/argparse.html)
+    - Fish specific, but a nice utility. Not easy to use outside of fish and no
+      subcommand support.

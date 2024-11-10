@@ -8,6 +8,8 @@ commands: dict[str, "Command"] = {}
 
 
 class Watcher(type):
+    """Register all subclasses into the commands global dictionary by their name"""
+
     def __init__(cls, name, bases, clsdict):
         if len(cls.mro()) > 2:
             commands[cls.name()] = cls
@@ -228,6 +230,66 @@ class SubparserAdd(Command):
         parser.add_parser(metaname, name, **kwargs)
 
 
+_output_format = {}
+
+
+def output_format(name: str):
+    def deco(f):
+        _output_format[name] = f
+        return f
+
+    return deco
+
+
+@output_format("shell")
+def output_shell(kv: dict, extra_args: list[str], output):
+    parser = argparse.ArgumentParser(
+        "argparsh parser --format shell",
+        description="Declare a variable for every CLI argument",
+    )
+    parser.add_argument(
+        "-p", "--prefix", help="Prefix to add to every declared variable", default=""
+    )
+    parser.add_argument(
+        "-e",
+        "--export",
+        action="store_true",
+        help="Export declarations to the environment",
+    )
+    parser.add_argument(
+        "-l", "--local", action="store_true", help="declare variable as local"
+    )
+    args = parser.parse_args(extra_args)
+
+    assert not (
+        args.local and args.export
+    ), "args cannot be declared as both local and export"
+    export = ""
+    if args.export:
+        export = "export "
+    if args.local:
+        export = "local "
+
+    for k, v in kv:
+        print(f"{export}{args.prefix}{k}={repr(v)}", file=output)
+
+
+@output_format("assoc_array")
+def output_assoc_array(kv: dict, extra_args: list[str], output):
+    parser = argparse.ArgumentParser(
+        "argparsh parser --format assoc_array",
+        description="Create an associative array from parsed arguments",
+    )
+    parser.add_argument(
+        "-n", "--name", required=True, help="Name of variable to output into"
+    )
+    args = parser.parse_args(extra_args)
+
+    print(f"declare -A {args.name}", file=output)
+    for k, v in kv:
+        print(f'{args.name}["{k}"]={repr(v)}', file=output)
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(required=True)
@@ -254,7 +316,7 @@ def main():
     p.add_argument(
         "--format",
         default="shell",
-        choices=["shell"],
+        choices=_output_format.keys(),
         help="Output format of parsed arguments",
     )
 
@@ -267,18 +329,34 @@ def main():
     if args.command:
         print(args.command.construct(args), end="")
     else:
+        output = sys.stdout
+        sys.stdout = sys.stderr
+
         actions = utils.parse_state(args.state)
 
         new_parser = utils.Parser()
         for name, data in actions:
             commands[name].run(new_parser, data)
 
-        output = sys.stdout
-        sys.stdout = sys.stderr
+        extra_args = []
+        found_sep = False
+        while len(args.rest):
+            if args.rest[0] == "--":
+                args.rest.pop(0)
+                found_sep = True
+                break
+            extra_args.append(args.rest[0])
+            args.rest.pop(0)
+        if not found_sep:
+            print(
+                "argparsh parse error! usage: argparsh parse [parser] [optional parser args] -- [program args]"
+            )
+            print("exit 1", file=output)
+            exit(1)
+
         try:
             parsed_args = new_parser.parser.parse_args(args.rest)
-            for k, v in parsed_args._get_kwargs():
-                print(f"{k.upper()}={repr(v)}", file=output)
+            _output_format[args.format](parsed_args._get_kwargs(), extra_args, output)
         except SystemExit as e:
             print(f"exit {e}", file=output)
             exit(e.code)

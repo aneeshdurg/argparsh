@@ -21,18 +21,27 @@ parser=$({
   argparsh set_defaults --subparser bar --myarg bar
 })
 
-# Run the parser against the command line args
-echo "Parsed args:"
-eval $(argparsh parse $parser "$@")
+# Parse cli arguments as shell variables prefixed with "arg_"
+#   cli arguments can be placed in the environment with "-e" or "--export"
+#   cli arguments can be declared as local with "-l" or "--local"
+eval $(argparsh parse $parser -p "arg_" -- "$@")
 
-# Parsed arguments are availible as shell variables
-echo "[bash]: A="$A
-echo "[bash]: INTERVAL="$INTERVAL
-echo "[bash]: F="$F
-if [ $MYARG == "foo" ]; then
-  echo "FOO: qux="$QUX
+echo "Parsed args as shell variables:"
+echo "[bash]: a="$arg_a
+echo "[bash]: interval="$arg_interval
+echo "[bash]: f="$arg_f
+if [ "$arg_myarg" == "foo" ]; then
+  echo "FOO: qux="$arg_qux
 else
-  if [ $MYARG == "bar" ]; then
-    echo "BAR: baz="$BAZ
+  if [ "$arg_myarg" == "bar" ]; then
+    echo "BAR: baz="$arg_baz
   fi
 fi
+
+# Parse cli args into an associative array
+eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
+echo "argument keys:" ${!args[@]}
+echo "argument values:" ${args[@]}
+echo "args['myarg'] =" ${args["myarg"]}
+
+
