@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Create a parser program
 parser=$({
