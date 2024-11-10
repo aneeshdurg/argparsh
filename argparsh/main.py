@@ -348,11 +348,8 @@ def main():
             extra_args.append(args.rest[0])
             args.rest.pop(0)
         if not found_sep:
-            print(
-                "argparsh parse error! usage: argparsh parse [parser] [optional parser args] -- [program args]"
-            )
-            print("exit 1", file=output)
-            exit(1)
+            args.rest = extra_args
+            extra_args = []
 
         try:
             parsed_args = new_parser.parser.parse_args(args.rest)
