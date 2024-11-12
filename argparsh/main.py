@@ -1,5 +1,6 @@
 import argparse
 import sys
+import textwrap
 from abc import abstractmethod
 
 from . import utils
@@ -61,7 +62,7 @@ class New(Command):
 
     @classmethod
     def help(cls):
-        return "Create a new parser with a name and description"
+        return "Create a new parser with a name and description (see argparsh new -h)"
 
     @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
@@ -102,7 +103,31 @@ class AddArg(Command):
 
     @classmethod
     def help(cls):
-        return "Add an argument to the parser (separate argument aliases and parsing options with '--' )"
+        return textwrap.dedent(
+            """
+                Add an argument to the parser (separate argument aliases and parsing options with '--' ).
+                This is a wrapper around ArgumentParser.add_argument. In other
+                words, the following invocation:
+                    argparsh add_arg [aliases]... -- [--key [value]]...
+                Is effectively:
+                    parser.add_argument(*[aliases], **[key/values])
+
+                argparsh is generally smart enough to parse and massage extra
+                arguments into the correct types.
+                e.g.
+                    argparsh add_argument -i --intval -- --type int --default 10 --choices "[10, 20, 30]"
+
+                will become:
+                    parser.add_argument("-i", "--intval", type=int, default=100, choices=[10, 20, 30])
+
+                note: to add an argument for "-h" or "--help" one will need to
+                run `argparsh -- -h ...`
+                note: to add an argument to a subparser use the --subparser and
+                --parser-arg flags. These flags must come before any aliases
+                that are being registered. See the section on subparsers below
+                for details.
+            """
+        )
 
     @classmethod
     def requires_subparser_arg(cls) -> bool:
@@ -134,35 +159,6 @@ class AddArg(Command):
         p.add_argument(*meth_args, **meth_kwargs)
 
 
-class SetDefault(Command):
-    @classmethod
-    def name(cls):
-        return "set_defaults"
-
-    @classmethod
-    def help(cls):
-        return "Set defaults for parser with key/value pairs"
-
-    @classmethod
-    def requires_subparser_arg(cls) -> bool:
-        return True
-
-    @classmethod
-    def consumes_rest_args(cls) -> bool:
-        return True
-
-    @classmethod
-    def construct(cls, args: argparse.Namespace) -> str:
-        meth_kwargs = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.subparser, args.parser_arg, meth_kwargs))
-
-    @classmethod
-    def run(cls, parser: utils.Parser, data):
-        subparser, parser_arg, meth_kwargs = data
-        p = parser.get_parser(parser_arg, subparser)
-        p.set_defaults(**meth_kwargs)
-
-
 class SubparserInit(Command):
     @classmethod
     def name(cls):
@@ -170,7 +166,48 @@ class SubparserInit(Command):
 
     @classmethod
     def help(cls):
-        return "Initialize a new subparser"
+        return textwrap.dedent(
+            """
+                Initialize a new subparser.
+                This is a wrapper around ArgumentParser.add_subparser, all
+                keyword arguments are forwarded to python.
+
+                The one exception is --metaname. The value provided to metaname
+                can be used to identify this subparser in future calls to
+                `add_arg` or `set_defaults`.
+                e.g.
+                parser=$({
+                    # Create two positional arguments, <prog> <foo> <bar>
+                    argparsh subparser_init --metaname foo
+                    argparsh subparser_init --metaname bar
+
+                    # <foo> has 2 possible commands fee and fie. We need to use
+                    # metaname, or these will be registerd to <bar> instead.
+                    argparsh subparser_add --metaname foo fee
+                    argparsh subparser_add --metaname foo fie
+
+                    # give fee an optional argument "value", e.g.
+                    #   <prog> fee --value 10 ...
+                    # --parser-arg is needed because by default, the argument
+                    # will be added to the parser that was created last - in
+                    # this case "bar" - so we need to explicitly attach this new
+                    # argument to the "foo" parser's "fee" subcommand.
+                    argparsh add_arg --parser-arg foo --subparser fee --value
+
+                    # <bar> has 2 possible commands boo and bah
+                    argparsh subparser_add --metaname bar boo
+                    argparsh subparser_add --metaname bar bah
+
+                    # possible commands supported by this parser:
+                    #   <prog> fee boo
+                    #   <prog> fee --value <value> boo
+                    #   <prog> fee bah
+                    #   <prog> fee --value <value> bah
+                    #   <prog> fie boo
+                    #   <prog> fie bah
+                })
+            """
+        )
 
     @classmethod
     def consumes_rest_args(cls) -> bool:
@@ -203,7 +240,7 @@ class SubparserAdd(Command):
 
     @classmethod
     def help(cls):
-        return "Add a command to a subparser"
+        return "Add a command to a subparser. See subparser_init for details"
 
     @classmethod
     def consumes_rest_args(cls) -> bool:
@@ -228,6 +265,62 @@ class SubparserAdd(Command):
     def run(cls, parser: utils.Parser, data):
         name, metaname, kwargs = data
         parser.add_parser(metaname, name, **kwargs)
+
+
+class SetDefault(Command):
+    @classmethod
+    def name(cls):
+        return "set_defaults"
+
+    @classmethod
+    def help(cls):
+        return textwrap.dedent(
+            """
+                Set defaults for parser with key/value pairs.
+
+                This is a wrapper around ArgumentParser.set_defaults, and is
+                commonly used to attach default values to a subparser to
+                determine which subcommand was called. The subparser to attach
+                to can be selected using `--subparser` and `--parser-arg`. All
+                other key/value pairs are forwarded.
+
+                e.g.:
+                    parser=$({
+                        argparsh subparser_init --metaname foo --required true
+
+                        argparsh subparser_add fee
+                        argparsh set_default --subparser fee --foocmd fee
+
+                        argparsh subparser_add fie
+                        argparsh set_default --subparser fee --foocmd fie
+                    })
+
+                    eval $(argparsh parse $parser -- "$@")
+                    echo "value for foo was: " $foocmd
+
+                If the above is called as `./prog.sh fee` it will print:
+                    value for foo was: fee
+            """
+        )
+
+    @classmethod
+    def requires_subparser_arg(cls) -> bool:
+        return True
+
+    @classmethod
+    def consumes_rest_args(cls) -> bool:
+        return True
+
+    @classmethod
+    def construct(cls, args: argparse.Namespace) -> str:
+        meth_kwargs = utils.arglist_to_kwargs(args.rest)
+        return cls.output((args.subparser, args.parser_arg, meth_kwargs))
+
+    @classmethod
+    def run(cls, parser: utils.Parser, data):
+        subparser, parser_arg, meth_kwargs = data
+        p = parser.get_parser(parser_arg, subparser)
+        p.set_defaults(**meth_kwargs)
 
 
 _output_format = {}
@@ -291,7 +384,33 @@ def output_assoc_array(kv: dict, extra_args: list[str], output):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=textwrap.dedent(
+            """\
+                Shell agnostic argument parser leveraging Python's argparse.
+                Each command will output the parser state to stdout. Concatenating the states will create a parser which can be passed to the "parse" subcommand.
+
+                Example (assumes the shell is bash):
+
+                    parser=$({
+                        # $0 expands to the name of the script
+                        argparsh new $0 --description "My program"
+
+                        argparsh add_arg myarg -- --help "Some positional argument"
+                        argparsh add_arg -f --flag -- --help "Some keyword argument"
+                    })
+
+                    # Pass cli args to the parser constructed above
+                    eval $(argparsh parse $parser -- "$@")
+
+                    echo "myarg =" $myarg
+                    echo "flag =" $flag
+
+                Most subcommands are wrappers around an argparse function, and will convert command line arguments to keyword arguments in python.
+            """
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
     subparsers = parser.add_subparsers(required=True)
 
     for command in commands.values():
@@ -310,7 +429,53 @@ def main():
             )
         command.extend_parser(p)
 
-    p = subparsers.add_parser("parse", help="Parse command line arguments")
+    p = subparsers.add_parser(
+        "parse",
+        help=textwrap.dedent(
+            """
+            Parse command line arguments
+
+            This command should usually be used with `eval` or some equivalent
+            to bring the parsed arguments into scope. e.g.:
+                eval $(argparsh parse $parser -- "$@")
+
+            Note that `--` is used to separate arguments to `argparsh parse`
+            from the arguments being parsed.
+
+            Optionally, the `--format` option can be supplied to change the
+            output format.
+            By default, the format is "shell", where every parsed argument is
+            created as a shell varaible (with the syntax `KEY=VALUE`).
+            Optionally, a prefix can be supplied with `--prefix` or `-p`:
+                # Parse an argument named "value"
+                parser=$(argparsh add_arg value)
+
+                # Will create an variable named "arg_value"
+                eval $(argparsh parse $parser -p arg_ -- "$@")
+            the flags `--export`/`-e` and `--local`/`-l` will respectively
+            either declare the variables as "export" (make the variable an
+            environment variable) or "local" (bash/zsh only).
+
+            The other supported format is `assoc_array`, which requires and
+            extra argument `--name` and will declare a new associative array
+            where every argument/value is a key/value entry in the associative
+            array:
+                # Parse an argument named "value"
+                parser=$(argparsh add_arg value)
+
+                # Will create a associative array (dictionary) variable named "args"
+                eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
+
+                # Access the "value" key from $args
+                echo ${args["value"]}
+
+            In any mode on failure to parse arguments for any reason (including
+            if the arguments invoked the help text), stdout will contain a
+            single line with the contents "exit <code>". And argparsh will exit
+            with the exit status also being set to `code`.
+        """
+        ),
+    )
     p.set_defaults(command=None)
     p.add_argument("state", help="Parser program constructed by argparsh calls")
     p.add_argument(

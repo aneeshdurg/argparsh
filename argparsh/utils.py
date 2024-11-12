@@ -45,7 +45,9 @@ class Parser:
     )
 
     def initialize(self, *args, **kwargs):
-        self._parser = argparse.ArgumentParser(*args, **kwargs)
+        self._parser = argparse.ArgumentParser(
+            *args, **kwargs, formatter_class=argparse.RawTextHelpFormatter
+        )
 
     @property
     def parser(self) -> argparse.ArgumentParser:
