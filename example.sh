@@ -42,5 +42,3 @@ eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
 echo "argument keys:" ${!args[@]}
 echo "argument values:" ${args[@]}
 echo "args['myarg'] =" ${args["myarg"]}
-
-

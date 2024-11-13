@@ -1,6 +1,7 @@
 import argparse
 import sys
 import textwrap
+import json
 from abc import abstractmethod
 
 from . import utils
@@ -172,45 +173,61 @@ class SubparserInit(Command):
                 This is a wrapper around ArgumentParser.add_subparser, all
                 keyword arguments are forwarded to python.
 
-                The one exception is --metaname. The value provided to metaname
-                can be used to identify this subparser in future calls to
-                `add_arg` or `set_defaults`.
+                The exceptions are:
+                    --metaname   The value provided to metaname
+                                 can be used to identify this subparser in
+                                 future calls to `add_arg` or `set_defaults`.
+                    --parser-arg This optional argument should be the metaname
+                                 of some previously created subparser. (See
+                                 below)
+                    --subparser  This optional argument should be the name of a
+                                 command attached to a previously created
+                                 subparser that we would like to create a new
+                                 subparser under. (See below)
+
                 e.g.
                 parser=$({
-                    # Create two positional arguments, <prog> <foo> <bar>
-                    argparsh subparser_init --metaname foo
-                    argparsh subparser_init --metaname bar
+                    # Create two subcommands `<prog> foo` and `<prog> bar`
+                    argparsh subparser_init --metaname foobar --required true
+                    argparsh subparser_add foo
+                    argparsh subparser_add bar
 
-                    # <foo> has 2 possible commands fee and fie. We need to use
-                    # metaname, or these will be registerd to <bar> instead.
-                    argparsh subparser_add --metaname foo fee
-                    argparsh subparser_add --metaname foo fie
+                    # Attach a subcommand to `foo`, creating
+                    #    <prog> foo fee
+                    # -and-
+                    #    <prog> foo fie
+                    argparsh subparser_init --subparser foo --metaname feefie --required true
+                    argparsh subparser_add fee
+                    argparsh set_defaults --subparser fee --myfooarg fee
+                    argparsh subparser_add fie
+                    argparsh set_defaults --subparser fie --myfooarg fie
 
-                    # give fee an optional argument "value", e.g.
-                    #   <prog> fee --value 10 ...
-                    # --parser-arg is needed because by default, the argument
-                    # will be added to the parser that was created last - in
-                    # this case "bar" - so we need to explicitly attach this new
-                    # argument to the "foo" parser's "fee" subcommand.
-                    argparsh add_arg --parser-arg foo --subparser fee --value
+                    # Add a regular argument to foo. Note that we now need to
+                    # use the metaname "foobar" so avoid attaching to the wrong
+                    # parser. (By default the most recently created parser is
+                    # used - in this case the most recently created parser is
+                    # feefie)
+                    argparsh add_arg --parser-arg foobar --subparser foo "qux"
+                    argparsh set_defaults --parser-arg foobar --subparser foo --myarg foo
 
-                    # <bar> has 2 possible commands boo and bah
-                    argparsh subparser_add --metaname bar boo
-                    argparsh subparser_add --metaname bar bah
+                    # Attach a regular argument to bar
+                    argparsh add_arg --parser-arg foobar --subparser bar "baz"
+                    argparsh set_defaults --parser-arg foobar --subparser bar --myarg bar
 
                     # possible commands supported by this parser:
-                    #   <prog> fee boo
-                    #   <prog> fee --value <value> boo
-                    #   <prog> fee bah
-                    #   <prog> fee --value <value> bah
-                    #   <prog> fie boo
-                    #   <prog> fie bah
+                    #   <prog> foo fee <qux>
+                    #   <prog> foo fie <qux>
+                    #   <prog> bar <baz>
                 })
             """
         )
 
     @classmethod
     def consumes_rest_args(cls) -> bool:
+        return True
+
+    @classmethod
+    def requires_subparser_arg(cls) -> bool:
         return True
 
     @classmethod
@@ -225,12 +242,12 @@ class SubparserInit(Command):
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
         data = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.metaname, data))
+        return cls.output((args.subparser, args.parser_arg, args.metaname, data))
 
     @classmethod
     def run(cls, parser: utils.Parser, data):
-        metaname, kwargs = data
-        parser.add_subparser(metaname, **kwargs)
+        subparser, parser_arg, metaname, kwargs = data
+        parser.add_subparser(subparser, parser_arg, metaname, **kwargs)
 
 
 class SubparserAdd(Command):
@@ -363,7 +380,7 @@ def output_shell(kv: dict, extra_args: list[str], output):
     if args.local:
         export = "local "
 
-    for k, v in kv:
+    for k, v in kv.items():
         print(f"{export}{args.prefix}{k}={repr(v)}", file=output)
 
 
@@ -379,8 +396,14 @@ def output_assoc_array(kv: dict, extra_args: list[str], output):
     args = parser.parse_args(extra_args)
 
     print(f"declare -A {args.name}", file=output)
-    for k, v in kv:
+    for k, v in kv.items():
         print(f'{args.name}["{k}"]={repr(v)}', file=output)
+
+
+@output_format("json")
+def output_json(kv: dict, extra_args: list[str], output):
+    assert len(extra_args) == 0
+    json.dump(kv, output, indent=4)
 
 
 def main():
@@ -444,35 +467,41 @@ def main():
 
             Optionally, the `--format` option can be supplied to change the
             output format.
-            By default, the format is "shell", where every parsed argument is
-            created as a shell varaible (with the syntax `KEY=VALUE`).
-            Optionally, a prefix can be supplied with `--prefix` or `-p`:
-                # Parse an argument named "value"
-                parser=$(argparsh add_arg value)
 
-                # Will create an variable named "arg_value"
-                eval $(argparsh parse $parser -p arg_ -- "$@")
-            the flags `--export`/`-e` and `--local`/`-l` will respectively
-            either declare the variables as "export" (make the variable an
-            environment variable) or "local" (bash/zsh only).
+            --format shell [--prefix PREFIX] [-e/--export] [-l/--local]
+                By default, the format is "shell", where every parsed argument
+                is created as a shell varaible (with the syntax `KEY=VALUE`).
+                Optionally, a prefix can be supplied with `--prefix` or `-p`:
+                    # Parse an argument named "value"
+                    parser=$(argparsh add_arg value)
 
-            The other supported format is `assoc_array`, which requires and
-            extra argument `--name` and will declare a new associative array
-            where every argument/value is a key/value entry in the associative
-            array:
-                # Parse an argument named "value"
-                parser=$(argparsh add_arg value)
+                    # Will create an variable named "arg_value"
+                    eval $(argparsh parse $parser -p arg_ -- "$@")
+                the flags `--export`/`-e` and `--local`/`-l` will respectively
+                either declare the variables as "export" (make the variable an
+                environment variable) or "local" (bash/zsh only).
 
-                # Will create a associative array (dictionary) variable named "args"
-                eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
+            --format assoc_array --name NAME
+                This declares a new associative array named `NAME` where every
+                argument/value is a key/value entry in the associative array:
+                    # Parse an argument named "value"
+                    parser=$(argparsh add_arg value)
 
-                # Access the "value" key from $args
-                echo ${args["value"]}
+                    # Will create a associative array (dictionary) variable named "args"
+                    eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
+
+                    # Access the "value" key from $args
+                    echo ${args["value"]}
+
+            --format json
+                outputs the parsed arguments as json
 
             In any mode on failure to parse arguments for any reason (including
             if the arguments invoked the help text), stdout will contain a
             single line with the contents "exit <code>". And argparsh will exit
-            with the exit status also being set to `code`.
+            with the exit status also being set to `code`. Note that explit
+            invocation of help will result in a code of 0, while failure to
+            parse arguments will result in a non-zero code.
         """
         ),
     )
@@ -518,7 +547,9 @@ def main():
 
         try:
             parsed_args = new_parser.parser.parse_args(args.rest)
-            _output_format[args.format](parsed_args._get_kwargs(), extra_args, output)
+            _output_format[args.format](
+                dict(parsed_args._get_kwargs()), extra_args, output
+            )
         except SystemExit as e:
             print(f"exit {e}", file=output)
             exit(e.code)

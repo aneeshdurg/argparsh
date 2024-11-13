@@ -55,10 +55,11 @@ class Parser:
             self._parser = argparse.ArgumentParser()
         return self._parser
 
-    def add_subparser(self, metaname, **kwargs):
+    def add_subparser(self, subparser, parser_arg, metaname, **kwargs):
         if metaname is None:
             metaname = str(uuid.uuid4())
-        self._subparsers[metaname] = self.parser.add_subparsers(**kwargs)
+        p = self.get_parser(parser_arg, subparser)
+        self._subparsers[metaname] = p.add_subparsers(**kwargs)
 
     def add_parser(self, metaname, name, **kwargs):
         if metaname is None:
