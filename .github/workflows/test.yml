@@ -1,0 +1,23 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test argparsh
+    runs-on: ubuntu-latest
+    steps:
+      - name: "checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "install"
+        run: |
+          pip install pytest
+          pip install .
+
+      - name: "run tests"
+        run: |
+          pytest -v test/
