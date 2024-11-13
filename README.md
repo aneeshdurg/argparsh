@@ -35,8 +35,10 @@ echo "String argument was" $strarg
 echo "Integer argument was" $intarg
 ```
 
-See `example.sh` for a more complete example, and examples of alternate output
-formats (e.g. parsing CLI arguments into an associative array)
+See `examples/example.sh` for a complete example, and examples of alternate
+output formats (e.g. parsing CLI arguments into an associative array). The
+`examples` directory has a few other examples that show different ways to use
+`argparsh` in general.
 
 ## Installation
 
