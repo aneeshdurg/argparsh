@@ -9,15 +9,15 @@ parser=$({
   argparsh add_arg "-i" "--interval" -- --type int --default 10
   argparsh add_arg "-f" -- --action store_true
 
-  argparsh subparser_init --required true
-  argparsh subparser_add foo
-  argparsh subparser_add bar
-
-  argparsh add_arg --subparser foo "qux"
-  argparsh set_defaults --subparser foo --myarg foo
-
-  argparsh add_arg --subparser bar "baz"
-  argparsh set_defaults --subparser bar --myarg bar
+  argparsh subparser foobar "foo or bar" --required true -- \
+    foo --help "foo subcommand" -- $({
+      argparsh add_arg "qux"
+      argparsh set_defaults --myarg foo
+    }) \
+    bar --help "bar subcommand" -- $({
+      argparsh add_arg "baz"
+      argparsh set_defaults --myarg bar
+    })
 })
 
 # Parse cli arguments as shell variables prefixed with "arg_"

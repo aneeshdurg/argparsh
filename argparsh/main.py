@@ -131,10 +131,6 @@ class AddArg(Command):
         )
 
     @classmethod
-    def requires_subparser_arg(cls) -> bool:
-        return True
-
-    @classmethod
     def consumes_rest_args(cls) -> bool:
         return True
 
@@ -151,68 +147,62 @@ class AddArg(Command):
             args.rest.pop(0)
 
         meth_kwargs = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.subparser, args.parser_arg, meth_args, meth_kwargs))
+        return cls.output((meth_args, meth_kwargs))
 
     @classmethod
     def run(cls, parser: utils.Parser, data):
-        subparser, parser_arg, meth_args, meth_kwargs = data
-        p = parser.get_parser(parser_arg, subparser)
+        meth_args, meth_kwargs = data
+        p = parser.parser
         p.add_argument(*meth_args, **meth_kwargs)
 
-
-class SubparserInit(Command):
+class Subparser(Command):
     @classmethod
     def name(cls):
-        return "subparser_init"
+        return "subparser"
 
     @classmethod
     def help(cls):
         return textwrap.dedent(
             """
-                Initialize a new subparser.
-                This is a wrapper around ArgumentParser.add_subparser, all
-                keyword arguments are forwarded to python.
+                Initialize a new subparser and all of it's sub-commands.
+                This is a wrapper around ArgumentParser.add_subparser and around
+                add_parser.
 
-                The exceptions are:
-                    --metaname   The value provided to metaname
-                                 can be used to identify this subparser in
-                                 future calls to `add_arg` or `set_defaults`.
-                    --parser-arg This optional argument should be the metaname
-                                 of some previously created subparser. (See
-                                 below)
-                    --subparser  This optional argument should be the name of a
-                                 command attached to a previously created
-                                 subparser that we would like to create a new
-                                 subparser under. (See below)
+                argparsh subparser <metavar> <help> [--key0 value0] -- \
+                    [<CMD> [[--key1 value1] --] <parser>]*
+
+                all key0/value0 pairs are converted to kwargs and passed to
+                add_subparser, all key1/value1 pairs are converted to kwargs and
+                passed to add_parser. See below for an example
+
+                metavar/help can be set to "" to be omitted.
 
                 e.g.
                 parser=$({
-                    # Create two subcommands `<prog> foo` and `<prog> bar`
-                    argparsh subparser_init --metaname foobar --required true
-                    argparsh subparser_add foo
-                    argparsh subparser_add bar
+                  # Create two subcommands `<prog> foo` and `<prog> bar`
+                  argparsh subparser "" "" --required true -- \
+                    foo $({
+                      # Attach a subcommand to `foo`, creating
+                      #    <prog> foo fee
+                      # -and-
+                      #    <prog> foo fie
+                      argparsh subparser "" "" -- \
+                        fee $(argparsh set_defaults --myfooarg fee) \
+                        fie $(argparsh set_defaults --myfooarg fie)
 
-                    # Attach a subcommand to `foo`, creating
-                    #    <prog> foo fee
-                    # -and-
-                    #    <prog> foo fie
-                    argparsh subparser_init --subparser foo --metaname feefie --required true
-                    argparsh subparser_add fee
-                    argparsh set_defaults --subparser fee --myfooarg fee
-                    argparsh subparser_add fie
-                    argparsh set_defaults --subparser fie --myfooarg fie
+                      # attach a normal argument to `foo`
+                      argparsh add_arg qux
 
-                    # Add a regular argument to foo. Note that we now need to
-                    # use the metaname "foobar" so avoid attaching to the wrong
-                    # parser. (By default the most recently created parser is
-                    # used - in this case the most recently created parser is
-                    # feefie)
-                    argparsh add_arg --parser-arg foobar --subparser foo "qux"
-                    argparsh set_defaults --parser-arg foobar --subparser foo --myarg foo
+                      # set `myarg` to foo when the `foo` subcommand is chosen
+                      argparsh set_defaults --myarg foo
+                    }) \
+                    bar $({
+                      # attach a normal argument to `foo`
+                      argparsh add_arg baz
 
-                    # Attach a regular argument to bar
-                    argparsh add_arg --parser-arg foobar --subparser bar "baz"
-                    argparsh set_defaults --parser-arg foobar --subparser bar --myarg bar
+                      # set `myarg` to bar when the `bar` subcommand is chosen
+                      argparsh set_defaults --myarg bar
+                    })
 
                     # possible commands supported by this parser:
                     #   <prog> foo fee <qux>
@@ -227,61 +217,78 @@ class SubparserInit(Command):
         return True
 
     @classmethod
-    def requires_subparser_arg(cls) -> bool:
-        return True
-
-    @classmethod
     def extend_parser(cls, parser: argparse.ArgumentParser):
         parser.add_argument(
-            "--metaname",
-            help="Optional name for argument",
-            required=False,
+            "metavar",
+            help="metavar for argument",
+            default=None,
+        )
+        parser.add_argument(
+            "help",
+            help="help text for argument",
             default=None,
         )
 
     @classmethod
-    def construct(cls, args: argparse.Namespace) -> str:
-        data = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.subparser, args.parser_arg, args.metaname, data))
-
-    @classmethod
-    def run(cls, parser: utils.Parser, data):
-        subparser, parser_arg, metaname, kwargs = data
-        parser.add_subparser(subparser, parser_arg, metaname, **kwargs)
-
-
-class SubparserAdd(Command):
-    @classmethod
-    def name(cls):
-        return "subparser_add"
-
-    @classmethod
-    def help(cls):
-        return "Add a command to a subparser. See subparser_init for details"
-
-    @classmethod
-    def consumes_rest_args(cls) -> bool:
-        return True
-
-    @classmethod
-    def extend_parser(cls, parser: argparse.ArgumentParser):
-        parser.add_argument(
-            "--metaname",
-            help="Name of subparser to add to (from subparser_init)",
-            required=False,
-            default=None,
-        )
-        parser.add_argument("name", help="Name of command")
+    def usage(cls):
+        return ""
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
-        data = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.name, args.metaname, data))
+        kwargs = []
+        if len(args.rest) and args.rest[0].startswith("--"):
+            while len(args.rest) and args.rest[0] != "--":
+                assert len(args.rest) >= 2
+                kwargs.append(args.rest[0])
+                kwargs.append(args.rest[1])
+                args.rest.pop(0)
+                args.rest.pop(0)
+            if len(args.rest) and args.rest[0] == "--":
+                args.rest.pop(0)
+        kwargs = utils.arglist_to_kwargs(kwargs)
+        if args.metavar:
+            kwargs["metavar"] = args.metavar
+        if args.help:
+            kwargs["help"] = args.help
+
+        assert len(args.rest), cls.usage()
+
+        subparsers = {}
+        while len(args.rest):
+            name = args.rest[0]
+            assert not name.startswith("-"), cls.usage()
+            args.rest.pop(0)
+
+            options = []
+            while len(args.rest) and args.rest[0].startswith("--") and args.rest[0] != "--":
+                assert len(args.rest) >= 2
+                options.append(args.rest[0])
+                options.append(args.rest[1])
+                args.rest.pop(0)
+                args.rest.pop(0)
+
+            assert len(args.rest)
+            if args.rest[0] == "--":
+                args.rest.pop(0)
+            options = utils.arglist_to_kwargs(options)
+
+            assert len(args.rest)
+            state = args.rest[0]
+            args.rest.pop(0)
+
+            subparsers[name] = (options, state)
+
+        return cls.output((kwargs, subparsers))
 
     @classmethod
     def run(cls, parser: utils.Parser, data):
-        name, metaname, kwargs = data
-        parser.add_parser(metaname, name, **kwargs)
+        kwargs, subparsers = data
+        metaname = parser.add_subparser(**kwargs)
+        for name, data in subparsers.items():
+            options, state = data
+            parser.active_parser = parser.add_parser(metaname, name, **options)
+            build_parser_from_state(state, parser, allow_new=False)
+            parser.active_parser = None
 
 
 class SetDefault(Command):
@@ -297,19 +304,17 @@ class SetDefault(Command):
 
                 This is a wrapper around ArgumentParser.set_defaults, and is
                 commonly used to attach default values to a subparser to
-                determine which subcommand was called. The subparser to attach
-                to can be selected using `--subparser` and `--parser-arg`. All
-                other key/value pairs are forwarded.
+                determine which subcommand was called.
 
                 e.g.:
                     parser=$({
-                        argparsh subparser_init --metaname foo --required true
-
-                        argparsh subparser_add fee
-                        argparsh set_default --subparser fee --foocmd fee
-
-                        argparsh subparser_add fie
-                        argparsh set_default --subparser fee --foocmd fie
+                        argparsh subparser --metavar foo --required true -- \
+                            fee $({
+                                argparsh set_default --foocmd fee
+                            }) \
+                            fie $({
+                                argparsh set_default --foocmd fie
+                            })
                     })
 
                     eval $(argparsh parse $parser -- "$@")
@@ -321,22 +326,18 @@ class SetDefault(Command):
         )
 
     @classmethod
-    def requires_subparser_arg(cls) -> bool:
-        return True
-
-    @classmethod
     def consumes_rest_args(cls) -> bool:
         return True
 
     @classmethod
     def construct(cls, args: argparse.Namespace) -> str:
         meth_kwargs = utils.arglist_to_kwargs(args.rest)
-        return cls.output((args.subparser, args.parser_arg, meth_kwargs))
+        return cls.output(meth_kwargs)
 
     @classmethod
     def run(cls, parser: utils.Parser, data):
-        subparser, parser_arg, meth_kwargs = data
-        p = parser.get_parser(parser_arg, subparser)
+        meth_kwargs = data
+        p = parser.parser
         p.set_defaults(**meth_kwargs)
 
 
@@ -406,6 +407,17 @@ def output_json(kv: dict, extra_args: list[str], output):
     json.dump(kv, output, indent=4)
 
 
+
+def build_parser_from_state(state: str, new_parser, allow_new=True) -> utils.Parser:
+    actions = utils.parse_state(state)
+
+    for name, data in actions:
+        if name == "new" and not allow_new:
+            assert "`argparsh new` is not allowed for a subparser"
+        commands[name].run(new_parser, data)
+    return new_parser
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=textwrap.dedent(
@@ -439,17 +451,6 @@ def main():
     for command in commands.values():
         p = subparsers.add_parser(command.name(), help=command.help())
         p.set_defaults(command=command)
-        if command.requires_subparser_arg():
-            p.add_argument(
-                "--subparser",
-                help="Name of subparser command (argument to create)",
-                default=None,
-            )
-            p.add_argument(
-                "--parser-arg",
-                help="Name of subparser argument (argument to init)",
-                default=None,
-            )
         command.extend_parser(p)
 
     p = subparsers.add_parser(
@@ -526,11 +527,7 @@ def main():
         output = sys.stdout
         sys.stdout = sys.stderr
 
-        actions = utils.parse_state(args.state)
-
-        new_parser = utils.Parser()
-        for name, data in actions:
-            commands[name].run(new_parser, data)
+        new_parser = build_parser_from_state(args.state, utils.Parser())
 
         extra_args = []
         found_sep = False

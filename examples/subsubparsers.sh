@@ -3,21 +3,28 @@
 parser=$({
   argparsh new $0
 
-  argparsh subparser_init --metaname foobar --required true
-  argparsh subparser_add foo
-  argparsh subparser_add bar
+  # parser for the foo subcommand
+  fooparser=$({
+    argparsh set_defaults --myarg foo
 
-  argparsh subparser_init --subparser foo --metaname feefie --required true
-  argparsh subparser_add fee
-  argparsh set_defaults --subparser fee --myfooarg fee
-  argparsh subparser_add fie
-  argparsh set_defaults --subparser fie --myfooarg fie
+    argparsh subparser "" "subsubcommand" -- \
+      fee $(argparsh set_defaults --myfooarg fee) \
+      fie $(argparsh set_defaults --myfooarg fie)
 
-  argparsh add_arg --parser-arg foobar --subparser foo "qux"
-  argparsh set_defaults --parser-arg foobar --subparser foo --myarg foo
+    argparsh add_arg "qux"
+  })
 
-  argparsh add_arg --parser-arg foobar --subparser bar "baz"
-  argparsh set_defaults --parser-arg foobar --subparser bar --myarg bar
+  # parser for the bar subcommand
+  barparser=$({
+    argparsh set_defaults --myarg bar
+    argparsh add_arg "baz"
+  })
+
+  # Register foo/bar subcommands on top-level parser
+  argparsh subparser "foobar" "foo and bar toplvl subcommands" --required true -- \
+    foo --help "foo subcommand" $fooparser \
+    bar --help "bar subcommand" $barparser
 })
 
 argparsh parse $parser -- "$@"
+

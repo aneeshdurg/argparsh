@@ -40,11 +40,11 @@ def arglist_to_kwargs(arglist):
 class Parser:
     _parser: argparse.ArgumentParser | None = None
     _subparsers: dict[str, argparse._SubParsersAction] = field(default_factory=dict)
-    _parsers: dict[str, dict[str, argparse.ArgumentParser]] = field(
-        default_factory=dict
-    )
+
+    active_parser = None
 
     def initialize(self, *args, **kwargs):
+        assert self._parser is None
         self._parser = argparse.ArgumentParser(
             *args, **kwargs, formatter_class=argparse.RawTextHelpFormatter
         )
@@ -53,33 +53,16 @@ class Parser:
     def parser(self) -> argparse.ArgumentParser:
         if self._parser is None:
             self._parser = argparse.ArgumentParser()
+        if self.active_parser is not None:
+            return self.active_parser
         return self._parser
 
-    def add_subparser(self, subparser, parser_arg, metaname, **kwargs):
-        if metaname is None:
-            metaname = str(uuid.uuid4())
-        p = self.get_parser(parser_arg, subparser)
+    def add_subparser(self, **kwargs):
+        metaname = str(uuid.uuid4())
+        p = self.parser
         self._subparsers[metaname] = p.add_subparsers(**kwargs)
+        return metaname
 
     def add_parser(self, metaname, name, **kwargs):
-        if metaname is None:
-            metaname = list(self._subparsers.keys())[-1]
-        if metaname not in self._parsers:
-            self._parsers[metaname] = {}
-        self._parsers[metaname][name] = self._subparsers[metaname].add_parser(
-            name, **kwargs
-        )
-
-    def get_parser(self, metaname, name):
-        if metaname is None and name is None:
-            return self.parser
-
-        if metaname is None:
-            metaname = list(self._subparsers.keys())[-1]
-        assert (
-            metaname in self._subparsers
-        ), f"Could not find parser with name {metaname}"
-        assert (
-            name in self._parsers[metaname]
-        ), f"Could not find subparser with name {name}"
-        return self._parsers[metaname][name]
+        new_parser = self._subparsers[metaname].add_parser(name, **kwargs)
+        return new_parser

@@ -22,16 +22,17 @@ stop_collection() {
 
 parser=$({
   argparsh new $0 -d "Stopwatch that collects stats while active"
-  argparsh subparser_init --required true --metaname command
+  argparsh subparser "" "" --required true -- \
+    start $({
+      argparsh set_defaults --command start_collection
 
-  argparsh subparser_add start
-  argparsh set_defaults --subparser start --command start_collection
-  argparsh subparser_add stop
-  argparsh set_defaults --subparser stop --command stop_collection
+      argparsh add_arg "outdir"
+      argparsh add_arg -i --interval -- --type int --default 1
+    }) \
+    stop $(argparsh set_defaults --command stop_collection) \
 
-  argparsh add_arg --subparser start "outdir"
-  argparsh add_arg --subparser start -i --interval -- --type int --default 1
 })
+
 eval $(argparsh parse $parser --format assoc_array --name args_ -- "$@")
 
 # Start the supplied command as a background process
