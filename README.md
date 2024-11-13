@@ -38,10 +38,6 @@ echo "Integer argument was" $intarg
 See `example.sh` for a more complete example, and examples of alternate output
 formats (e.g. parsing CLI arguments into an associative array)
 
-### TODO
-
-+ Support for more output formats (fish, JSON, ...)
-
 ## Installation
 
 No dependencies besides python/pip.
@@ -59,6 +55,12 @@ pip install .
 ```
 
 ## Similar Works
+
+argparsh differs from previous attempts at improving shell argument parsing by
+being shell agnostic (although only bash is tested, it is relatively easy to add
+support for more shells, contributions are welcome), supporting
+subcommands/subparsers, and allowing detailed + customizable help text to be
+configured.
 
 + [getopts](https://man7.org/linux/man-pages/man1/getopts.1p.html)
     - the OG argument handling utility. A bit clunky to use.
