@@ -51,7 +51,7 @@ Or, to build from source:
 ```sh
 git clone https://github.com/aneeshdurg/argparsh.git
 cd argparsh
-cargo install
+cargo install --path .
 ```
 
 ## Similar Works
