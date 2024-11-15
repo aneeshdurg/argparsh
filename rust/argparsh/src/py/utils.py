@@ -88,6 +88,19 @@ class Parser:
         p = self.get_parser(parser_arg, subparser)
         p.add_argument(*meth_args, **meth_kwargs)
 
+    def add_subparser(self, metaname, args, subparser, parser_arg):
+        kwargs = arglist_to_kwargs(args)
+        self.add_subparser(subparser, parser_arg, metaname, **kwargs)
+
+    def add_subcommand(self, metaname, name, args):
+        kwargs = arglist_to_kwargs(args.rest)
+        self.add_parser(metaname, name, **kwargs)
+
+    def set_defaults(self, subparser, parser_arg, args):
+        kwargs = arglist_to_kwargs(args)
+        p = self.get_parser(parser_arg, subparser)
+        p.set_defaults(**kwargs)
+
 
 _output_format = {}
 

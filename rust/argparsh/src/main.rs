@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple, PyNone};
+use pyo3::types::{PyDict, PyTuple};
 use serde::{Deserialize, Serialize};
 
 extern crate serde_qs as qs;
@@ -28,7 +28,8 @@ impl ToString for Format {
             Format::Shell => "shell",
             Format::AssocArray => "assoc_array",
             Format::JSON => "json",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
@@ -46,7 +47,54 @@ enum Command {
         epilogue: Option<String>,
     },
     /// Add an argument
+    #[command(name = "add_arg")]
     AddArg {
+        /// Optional subparser command to add the argument to
+        #[arg(long)]
+        subparser: Option<String>,
+
+        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        #[arg(long = "parser-arg")]
+        parser_arg: Option<String>,
+
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    #[command(name = "subparser_init")]
+    SubparserInit {
+        /// Optional subparser command to add the argument to
+        #[arg(long)]
+        subparser: Option<String>,
+
+        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        #[arg(long = "parser-arg")]
+        parser_arg: Option<String>,
+
+        #[arg(long)]
+        metaname: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    #[command(name = "subparser_add")]
+    SubparserAdd {
+        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        #[arg(long)]
+        metaname: Option<String>,
+        /// Name of subcommand
+        name: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    #[command(name = "set_defaults")]
+    SetDefaults {
+        /// Optional subparser command to add the argument to
+        #[arg(long)]
+        subparser: Option<String>,
+
+        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        #[arg(long = "parser-arg")]
+        parser_arg: Option<String>,
+
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -71,6 +119,11 @@ fn parse(parser: String, args: Vec<String>, format: Format) {
             PyModule::from_code_bound(py, include_str!("py/utils.py"), "utils.py", "utils")?;
         let parser = utils.getattr("Parser")?.call0()?;
 
+        let add_arg = parser.getattr("add_argument")?;
+        let add_subparser = parser.getattr("add_subparser")?;
+        let add_subcommand = parser.getattr("add_subcommand")?;
+        let set_defaults = parser.getattr("set_defaults")?;
+
         for act in actions {
             let cmd: Command = qs::from_str(act).unwrap();
             match cmd {
@@ -93,20 +146,42 @@ fn parse(parser: String, args: Vec<String>, format: Format) {
                         .getattr("initialize")?
                         .call(parser_args, Some(&parser_kwargs))?;
                 }
-                Command::AddArg { args } => {
-                    let add_arg = parser.getattr("add_argument")?;
-                    let subparser = PyNone::get_bound(py);
-                    let parser_arg = PyNone::get_bound(py);
-
+                Command::AddArg {
+                    subparser,
+                    parser_arg,
+                    args,
+                } => {
                     add_arg.call1((args, subparser, parser_arg))?;
                 }
-                _ => {
-                    println!("Unsupported action {:?}", cmd);
+                Command::SubparserInit {
+                    subparser,
+                    parser_arg,
+                    metaname,
+                    args,
+                } => {
+                    add_subparser.call1((metaname, args, subparser, parser_arg))?;
                 }
+                Command::SubparserAdd {
+                    metaname,
+                    name,
+                    args,
+                } => {
+                    add_subcommand.call1((metaname, name, args))?;
+                }
+                Command::SetDefaults {
+                    subparser,
+                    parser_arg,
+                    args,
+                } => {
+                    set_defaults.call1((subparser, parser_arg, args))?;
+                }
+                Command::Parse { .. } => unreachable!(),
             }
         }
 
-        utils.getattr("run_parse")?.call1((parser, format.to_string(), args))?;
+        utils
+            .getattr("run_parse")?
+            .call1((parser, format.to_string(), args))?;
         PyResult::Ok(0)
     });
 
@@ -120,7 +195,11 @@ fn parse(parser: String, args: Vec<String>, format: Format) {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Command::Parse { parser, format, args } => {
+        Command::Parse {
+            parser,
+            format,
+            args,
+        } => {
             parse(parser, args, format);
         }
         _ => {
