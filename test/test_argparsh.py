@@ -20,9 +20,10 @@ def test_noargs():
         stderr=subprocess.PIPE,
         stdout=subprocess.PIPE,
     )
-    stdout, stderr = p.communicate()
+    p.wait()
+    stdout = p.stdout.read()
+    stderr = p.stderr.read()
 
-    assert stdout == b"exit 0\n"
     assert stderr.decode() == textwrap.dedent(
         """\
             usage: myprog [-h]
@@ -35,6 +36,7 @@ def test_noargs():
             end of help text
         """
     )
+    assert stdout == b"exit 0\n"
 
     p = subprocess.Popen(
         ["argparsh", "parse", parser, "--"],

@@ -32,7 +32,7 @@ parser=$({
   argparsh add_arg --subparser start "outdir"
   argparsh add_arg --subparser start -i --interval -- --type int --default 1
 })
-eval $(argparsh parse $parser --format assoc_array --name args_ -- "$@")
+eval $(argparsh parse $parser --format assoc-array --name args_ -- "$@")
 
 # Start the supplied command as a background process
 ${args_["command"]} args_ &

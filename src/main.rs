@@ -1,11 +1,9 @@
+use bitcode::{Decode, Encode};
 use clap::{Parser, Subcommand, ValueEnum};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
-use serde::{Deserialize, Serialize};
 
-extern crate serde_qs as qs;
-
-const DELIMITER: &str = "&argparsh";
+const DELIMITER: &str = "&";
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -14,7 +12,7 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum Format {
     /// Shell
     Shell,
@@ -181,7 +179,7 @@ invocation of help will result in a code of 0, while failure to
 parse arguments will result in a non-zero code.
 "#;
 
-#[derive(Debug, Subcommand, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Subcommand, PartialEq, Encode, Decode)]
 enum Command {
     /// Create a new parser with a name and description
     New {
@@ -277,7 +275,8 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
         let set_defaults = parser.getattr("cmd_set_defaults")?;
 
         for act in actions {
-            let cmd: Command = qs::from_str(act).unwrap();
+            let cmd_json = urlencoding::decode_binary(act.as_bytes());
+            let cmd: Command = bitcode::decode(&cmd_json).unwrap();
             match cmd {
                 Command::New {
                     name,
@@ -355,7 +354,8 @@ fn main() {
             parse(parser, args, format);
         }
         _ => {
-            let s = qs::to_string(&cli.command).unwrap();
+            let json = bitcode::encode(&cli.command);
+            let s = urlencoding::encode_binary(&json);
             print!("{}{}", DELIMITER, s);
         }
     }

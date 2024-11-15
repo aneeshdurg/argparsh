@@ -170,7 +170,9 @@ def output_json(kv: dict, extra_args: list[str], output):
     json.dump(kv, output, indent=4)
 
 
-def run_parse(parser: Parser, format: str, args: list[str]):
+def run_parse(parser: Parser, format: str, args: list[str] | None):
+    if args is None:
+        args = []
     output = sys.stdout
     sys.stdout = sys.stderr
 
@@ -193,3 +195,5 @@ def run_parse(parser: Parser, format: str, args: list[str]):
     except SystemExit as e:
         print(f"exit {e}", file=output)
         exit(e.code)
+    finally:
+        output.flush()
