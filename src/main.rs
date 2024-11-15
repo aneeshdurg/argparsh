@@ -190,9 +190,9 @@ enum Command {
         /// Program description
         #[arg(short, long)]
         description: Option<String>,
-        /// Help text epilogue
+        /// Help text epilog
         #[arg(short, long)]
-        epilogue: Option<String>,
+        epilog: Option<String>,
     },
     /// Add argument to a parser or subparser
     #[command(name = "add_arg", long_about=ADD_ARG_HELP)]
@@ -282,7 +282,7 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                 Command::New {
                     name,
                     description,
-                    epilogue,
+                    epilog,
                 } => {
                     let parser_args = PyTuple::new_bound(py, vec![name]);
 
@@ -290,8 +290,8 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                     if let Some(v) = description {
                         parser_kwargs.set_item("description", v)?;
                     }
-                    if let Some(v) = epilogue {
-                        parser_kwargs.set_item("epilogue", v)?;
+                    if let Some(v) = epilog {
+                        parser_kwargs.set_item("epilog", v)?;
                     }
 
                     parser
