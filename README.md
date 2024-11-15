@@ -42,10 +42,8 @@ output formats (e.g. parsing CLI arguments into an associative array). The
 
 ## Installation
 
-No dependencies besides python/pip.
-
 ```sh
-pip install argparsh
+cargo install argparsh
 ```
 
 Or, to build from source:
@@ -53,7 +51,7 @@ Or, to build from source:
 ```sh
 git clone https://github.com/aneeshdurg/argparsh.git
 cd argparsh
-pip install .
+cargo install
 ```
 
 ## Similar Works
