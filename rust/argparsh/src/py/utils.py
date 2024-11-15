@@ -7,6 +7,8 @@ import json
 
 def arglist_to_kwargs(arglist):
     kwargs = {}
+    if arglist == None:
+        return kwargs
     for i in range(0, len(arglist), 2):
         assert arglist[i].startswith("--")
         key = arglist[i][2:]
@@ -73,7 +75,7 @@ class Parser:
         ), f"Could not find subparser with name {name}"
         return self._parsers[metaname][name]
 
-    def add_argument(self, args, subparser, parser_arg):
+    def cmd_add_argument(self, args, subparser, parser_arg):
         # add an argument to obj by assembling the method to call
         aliases = []
         while len(args) and not args[0] == "--":
@@ -88,15 +90,15 @@ class Parser:
         p = self.get_parser(parser_arg, subparser)
         p.add_argument(*meth_args, **meth_kwargs)
 
-    def add_subparser(self, metaname, args, subparser, parser_arg):
+    def cmd_add_subparser(self, metaname, args, subparser, parser_arg):
         kwargs = arglist_to_kwargs(args)
         self.add_subparser(subparser, parser_arg, metaname, **kwargs)
 
-    def add_subcommand(self, metaname, name, args):
-        kwargs = arglist_to_kwargs(args.rest)
+    def cmd_add_subcommand(self, metaname, name, args):
+        kwargs = arglist_to_kwargs(args)
         self.add_parser(metaname, name, **kwargs)
 
-    def set_defaults(self, subparser, parser_arg, args):
+    def cmd_set_defaults(self, subparser, parser_arg, args):
         kwargs = arglist_to_kwargs(args)
         p = self.get_parser(parser_arg, subparser)
         p.set_defaults(**kwargs)

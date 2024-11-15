@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 extern crate serde_qs as qs;
 
+const DELIMITER: &str = "&argparsh";
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -58,7 +60,7 @@ enum Command {
         parser_arg: Option<String>,
 
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Option<Vec<String>>,
     },
     #[command(name = "subparser_init")]
     SubparserInit {
@@ -73,7 +75,7 @@ enum Command {
         #[arg(long)]
         metaname: Option<String>,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Option<Vec<String>>,
     },
     #[command(name = "subparser_add")]
     SubparserAdd {
@@ -83,7 +85,7 @@ enum Command {
         /// Name of subcommand
         name: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Option<Vec<String>>,
     },
     #[command(name = "set_defaults")]
     SetDefaults {
@@ -96,7 +98,7 @@ enum Command {
         parser_arg: Option<String>,
 
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Option<Vec<String>>,
     },
     /// Parse CLI args
     Parse {
@@ -106,12 +108,12 @@ enum Command {
         format: Format,
 
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Option<Vec<String>>,
     },
 }
 
-fn parse(parser: String, args: Vec<String>, format: Format) {
-    let mut actions = parser.split("&argparsh");
+fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
+    let mut actions = parser.split(DELIMITER);
     actions.next();
 
     let py_res = Python::with_gil(|py| {
@@ -119,10 +121,10 @@ fn parse(parser: String, args: Vec<String>, format: Format) {
             PyModule::from_code_bound(py, include_str!("py/utils.py"), "utils.py", "utils")?;
         let parser = utils.getattr("Parser")?.call0()?;
 
-        let add_arg = parser.getattr("add_argument")?;
-        let add_subparser = parser.getattr("add_subparser")?;
-        let add_subcommand = parser.getattr("add_subcommand")?;
-        let set_defaults = parser.getattr("set_defaults")?;
+        let add_arg = parser.getattr("cmd_add_argument")?;
+        let add_subparser = parser.getattr("cmd_add_subparser")?;
+        let add_subcommand = parser.getattr("cmd_add_subcommand")?;
+        let set_defaults = parser.getattr("cmd_set_defaults")?;
 
         for act in actions {
             let cmd: Command = qs::from_str(act).unwrap();
@@ -204,7 +206,7 @@ fn main() {
         }
         _ => {
             let s = qs::to_string(&cli.command).unwrap();
-            print!("&argparsh{}", s);
+            print!("{}{}", DELIMITER, s);
         }
     }
 }
