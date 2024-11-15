@@ -135,7 +135,7 @@ def test_multiple_subparsers():
     cmds = textwrap.dedent(
         """
         # Create two subcommands `<prog> foo` and `<prog> bar`
-        argparsh subparser_init --metaname foobar --required true
+        argparsh subparser_init foobar --required true
         argparsh subparser_add foo
         argparsh subparser_add bar
 
@@ -143,7 +143,7 @@ def test_multiple_subparsers():
         #    <prog> foo fee
         # -and-
         #    <prog> foo fie
-        argparsh subparser_init --subparser foo --metaname feefie --required true
+        argparsh subparser_init feefie --subparser foo --required true
         argparsh subparser_add fee
         argparsh set_defaults --subparser fee --myfooarg fee
         argparsh subparser_add fie

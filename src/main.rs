@@ -58,9 +58,6 @@ This is a wrapper around ArgumentParser.add_subparser, all keyword arguments are
 python.
 
 The exceptions are:
-    --metaname   The value provided to metaname
-                 can be used to identify this subparser in
-                 future calls to `add_arg` or `set_defaults`.
     --parser-arg This optional argument should be the metaname
                  of some previously created subparser. (See
                  below)
@@ -68,11 +65,12 @@ The exceptions are:
                  command attached to a previously created
                  subparser that we would like to create a new
                  subparser under. (See below)
+Note that these two args MUST come before any others
 
 e.g.
 parser=$({
     # Create two subcommands `<prog> foo` and `<prog> bar`
-    argparsh subparser_init --metaname foobar --required true
+    argparsh subparser_init foobar --required true
     argparsh subparser_add foo
     argparsh subparser_add bar
 
@@ -80,7 +78,7 @@ parser=$({
     #    <prog> foo fee
     # -and-
     #    <prog> foo fie
-    argparsh subparser_init --subparser foo --metaname feefie --required true
+    argparsh subparser_init feefie --subparser foo --required true
     argparsh subparser_add fee
     argparsh set_defaults --subparser fee --myfooarg fee
     argparsh subparser_add fie
@@ -209,6 +207,8 @@ enum Command {
     /// Initialize a new subparser
     #[command(name = "subparser_init", long_about=SUBPARSER_INIT_HELP)]
     SubparserInit {
+        metaname: Option<String>,
+
         /// Optional subparser command to add the argument to
         #[arg(long)]
         subparser: Option<String>,
@@ -217,8 +217,6 @@ enum Command {
         #[arg(long = "parser-arg")]
         parser_arg: Option<String>,
 
-        #[arg(long)]
-        metaname: Option<String>,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Option<Vec<String>>,
     },
@@ -266,7 +264,7 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
 
     let py_res = Python::with_gil(|py| {
         let utils =
-            PyModule::from_code_bound(py, include_str!("py/utils.py"), "utils.py", "utils")?;
+            PyModule::from_code_bound(py, include_str!("py/utils.py"), "argparsh", "utils")?;
         let parser = utils.getattr("Parser")?.call0()?;
 
         let add_arg = parser.getattr("cmd_add_argument")?;

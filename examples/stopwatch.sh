@@ -22,7 +22,7 @@ stop_collection() {
 
 parser=$({
   argparsh new $0 -d "Stopwatch that collects stats while active"
-  argparsh subparser_init --required true --metaname command
+  argparsh subparser_init command --required true
 
   argparsh subparser_add start
   argparsh set_defaults --subparser start --command start_collection

@@ -46,13 +46,13 @@ class Parser:
             self._parser = argparse.ArgumentParser()
         return self._parser
 
-    def add_subparser(self, subparser, parser_arg, metaname, **kwargs):
+    def add_subparser(self, subparser, parser_arg, metaname, kwargs):
         if metaname is None:
             metaname = str(uuid.uuid4())
         p = self.get_parser(parser_arg, subparser)
         self._subparsers[metaname] = p.add_subparsers(**kwargs)
 
-    def add_parser(self, metaname, name, **kwargs):
+    def add_parser(self, metaname, name, kwargs):
         if metaname is None:
             metaname = list(self._subparsers.keys())[-1]
         if metaname not in self._parsers:
@@ -92,11 +92,11 @@ class Parser:
 
     def cmd_add_subparser(self, metaname, args, subparser, parser_arg):
         kwargs = arglist_to_kwargs(args)
-        self.add_subparser(subparser, parser_arg, metaname, **kwargs)
+        self.add_subparser(subparser, parser_arg, metaname, kwargs)
 
     def cmd_add_subcommand(self, metaname, name, args):
         kwargs = arglist_to_kwargs(args)
-        self.add_parser(metaname, name, **kwargs)
+        self.add_parser(metaname, name, kwargs)
 
     def cmd_set_defaults(self, subparser, parser_arg, args):
         kwargs = arglist_to_kwargs(args)
