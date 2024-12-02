@@ -33,6 +33,33 @@ impl ToString for Format {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
+enum NArgs {
+    /// '+' consumes at least one argument but possibly many
+    #[clap(name = "+")]
+    AtLeastOne,
+    /// '*' consumes any number arguments
+    #[clap(name = "*")]
+    Many,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
+enum Action {
+    /// Stores a single value
+    Store,
+    #[clap(name = "store_const")]
+    #[clap(name = "store_true")]
+    /// Stores True (creates a boolean flag/niladic flags only)
+    StoreTrue,
+    /// Appends values together across multiple instances
+    Append,
+    #[clap(name = "append_const")]
+    /// Counts instances of the flag (niladic flags only)
+    Count,
+    /// Prints help text
+    Help,
+}
+
 const ADD_ARG_HELP: &str = r#"
 Add an argument to the parser (separate argument aliases and parsing options with '--' ).
 This is a wrapper around ArgumentParser.add_argument. In other words, the following invocation:
@@ -201,6 +228,71 @@ enum Command {
         #[arg(long = "parser-arg")]
         parser_arg: Option<String>,
 
+        /// Number of arguments to consume (cannot be used with --nargs)
+        #[arg(short, long)]
+        nargs_exact: Option<usize>,
+
+        #[arg(long, conflicts_with = "nargs_exact")]
+        nargs: Option<NArgs>,
+
+        #[arg(short, long, default_value = "store")]
+        action: Action,
+
+        /// Stores a constant value when the flag is passed (niladic flags only)
+        #[arg(long, conflicts_with = "action")]
+        store_const: Option<String>,
+
+        /// Appends a constant value for each instance of the flag appearing (niladic flags only)
+        #[arg(long, conflicts_with = "action", conflicts_with = "store_const")]
+        append_const: Option<String>,
+
+        /// Marks this argument as triggering version display
+        #[arg(
+            long,
+            conflicts_with = "action",
+            conflicts_with = "store_const",
+            conflicts_with = "append_const",
+            conflicts_with = "nargs",
+            conflicts_with = "nargs_exact",
+            requires = "version"
+        )]
+        displays_version: bool,
+
+        /// Version format string to display when version argument is passed
+        #[arg(long, requires = "displays_version")]
+        version: Option<String>,
+
+        /// Data type of argument (for validation only)
+        #[arg(short, long, name = "type")]
+        type_: Option<String>,
+
+        /// Set choices for values (can be supplied multiple times)
+        #[arg(short, long, action = clap::ArgAction::Append)]
+        choice: Option<Vec<String>>,
+
+        /// When supplied this argument will be marked as required
+        #[arg(short, long)]
+        required: bool,
+
+        /// Help text for this argument
+        #[arg(long)]
+        helptext: Option<String>,
+
+        /// Name to use for this variable in help text
+        #[arg(long)]
+        metavar: Option<String>,
+
+        /// Destination variable name for this argument (default will be inferred from argument
+        /// name)
+        #[arg(long)]
+        dest: Option<String>,
+
+        /// Mark this argument as deprecated
+        #[arg(long)]
+        deprecated: bool,
+
+        /// Optional argument name/flag and aliases. If omitted or if the values does not start with
+        /// '-', then the argument will be treated as positional
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Option<Vec<String>>,
     },
@@ -299,6 +391,7 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                     subparser,
                     parser_arg,
                     args,
+                    ..
                 } => {
                     add_arg.call1((args, subparser, parser_arg))?;
                 }
