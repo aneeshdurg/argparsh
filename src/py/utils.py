@@ -75,20 +75,51 @@ class Parser:
         ), f"Could not find subparser with name {name}"
         return self._parsers[metaname][name]
 
-    def cmd_add_argument(self, args, subparser, parser_arg):
-        # add an argument to obj by assembling the method to call
-        aliases = []
-        while len(args) and not args[0] == "--":
-            aliases.append(args[0])
-            args.pop(0)
-        meth_args = aliases
+    def cmd_add_argument(self, cmd):
+        args = cmd.args
+        kwargs = {}
+        def add_if_present(name, rename=None):
+            v = getattr(cmd, name)
+            if v is None:
+                return
+            kwargs[rename or name] = v
 
-        if len(args):
-            args.pop(0)
+        add_if_present("choice", "choices")
+        # TODO: ???
+        # add_if_present("deprecated")
+        add_if_present("dest")
+        add_if_present("type_", "type")
+        add_if_present("helptext", "help")
+        add_if_present("metavar")
 
-        meth_kwargs = arglist_to_kwargs(args)
-        p = self.get_parser(parser_arg, subparser)
-        p.add_argument(*meth_args, **meth_kwargs)
+        if cmd.required:
+            add_if_present("required")
+
+        if cmd.action is not None:
+            kwargs["action"] = str(cmd.action).split(".")[1].lower()
+        elif cmd.store_const is not None:
+            kwargs["action"] = "store_const"
+            kwargs["const"] = cmd.store_const
+        elif cmd.append_const is not None:
+            kwargs["action"] = "append_const"
+            kwargs["const"] = cmd.append_const
+
+        if cmd.displays_version:
+            kwargs["action"] = "version"
+            add_if_present("version")
+
+        if cmd.nargs is not None:
+            if cmd.nargs == NArgs.AtLeastOne:
+                kwargs["nargs"] = "+"
+            else:
+                kwargs["nargs"] = "*"
+        elif cmd.nargs_exact is not None:
+            kwargs["nwargs"] = cmd.nargs_exact
+
+
+        p = self.get_parser(cmd.parser_arg, cmd.subparser)
+
+        p.add_argument(*args, **kwargs)
 
     def cmd_add_subparser(self, metaname, args, subparser, parser_arg):
         kwargs = arglist_to_kwargs(args)

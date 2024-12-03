@@ -1,5 +1,5 @@
 use bitcode::{Decode, Encode};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -33,6 +33,7 @@ impl ToString for Format {
     }
 }
 
+#[pyclass(eq, eq_int)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum NArgs {
     /// '+' consumes at least one argument but possibly many
@@ -43,6 +44,7 @@ enum NArgs {
     Many,
 }
 
+#[pyclass(eq, eq_int)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum Action {
     /// Stores a single value
@@ -204,6 +206,86 @@ invocation of help will result in a code of 0, while failure to
 parse arguments will result in a non-zero code.
 "#;
 
+#[pyclass(get_all)]
+#[derive(Debug, Args, PartialEq, Encode, Decode)]
+struct AddArgCommand {
+    /// Optional subparser command to add the argument to
+    #[arg(long)]
+    subparser: Option<String>,
+
+    /// Optional parser metaname that is the parent of the command passed in with --subparser
+    #[arg(long = "parser-arg")]
+    parser_arg: Option<String>,
+
+    /// Number of arguments to consume (cannot be used with --nargs)
+    #[arg(short, long)]
+    nargs_exact: Option<usize>,
+
+    #[arg(long, conflicts_with = "nargs_exact")]
+    nargs: Option<NArgs>,
+
+    #[arg(short, long, default_value = "store")]
+    action: Action,
+
+    /// Stores a constant value when the flag is passed (niladic flags only)
+    #[arg(long, conflicts_with = "action")]
+    store_const: Option<String>,
+
+    /// Appends a constant value for each instance of the flag appearing (niladic flags only)
+    #[arg(long, conflicts_with = "action", conflicts_with = "store_const")]
+    append_const: Option<String>,
+
+    /// Marks this argument as triggering version display
+    #[arg(
+        long,
+        conflicts_with = "action",
+        conflicts_with = "store_const",
+        conflicts_with = "append_const",
+        conflicts_with = "nargs",
+        conflicts_with = "nargs_exact",
+        requires = "version"
+    )]
+    displays_version: bool,
+
+    /// Version format string to display when version argument is passed
+    #[arg(long, requires = "displays_version")]
+    version: Option<String>,
+
+    /// Data type of argument (for validation only)
+    #[arg(short, long, name = "type")]
+    type_: Option<String>,
+
+    /// Set choices for values (can be supplied multiple times)
+    #[arg(short, long, action = clap::ArgAction::Append)]
+    choice: Option<Vec<String>>,
+
+    /// When supplied this argument will be marked as required
+    #[arg(short, long)]
+    required: bool,
+
+    /// Help text for this argument
+    #[arg(long)]
+    helptext: Option<String>,
+
+    /// Name to use for this variable in help text
+    #[arg(long)]
+    metavar: Option<String>,
+
+    /// Destination variable name for this argument (default will be inferred from argument
+    /// name)
+    #[arg(long)]
+    dest: Option<String>,
+
+    /// Mark this argument as deprecated
+    #[arg(long)]
+    deprecated: bool,
+
+    /// Optional argument name/flag and aliases. If omitted or if the values does not start with
+    /// '-', then the argument will be treated as positional
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Option<Vec<String>>,
+}
+
 #[derive(Debug, Subcommand, PartialEq, Encode, Decode)]
 enum Command {
     /// Create a new parser with a name and description
@@ -219,83 +301,7 @@ enum Command {
     },
     /// Add argument to a parser or subparser
     #[command(name = "add_arg", long_about=ADD_ARG_HELP)]
-    AddArg {
-        /// Optional subparser command to add the argument to
-        #[arg(long)]
-        subparser: Option<String>,
-
-        /// Optional parser metaname that is the parent of the command passed in with --subparser
-        #[arg(long = "parser-arg")]
-        parser_arg: Option<String>,
-
-        /// Number of arguments to consume (cannot be used with --nargs)
-        #[arg(short, long)]
-        nargs_exact: Option<usize>,
-
-        #[arg(long, conflicts_with = "nargs_exact")]
-        nargs: Option<NArgs>,
-
-        #[arg(short, long, default_value = "store")]
-        action: Action,
-
-        /// Stores a constant value when the flag is passed (niladic flags only)
-        #[arg(long, conflicts_with = "action")]
-        store_const: Option<String>,
-
-        /// Appends a constant value for each instance of the flag appearing (niladic flags only)
-        #[arg(long, conflicts_with = "action", conflicts_with = "store_const")]
-        append_const: Option<String>,
-
-        /// Marks this argument as triggering version display
-        #[arg(
-            long,
-            conflicts_with = "action",
-            conflicts_with = "store_const",
-            conflicts_with = "append_const",
-            conflicts_with = "nargs",
-            conflicts_with = "nargs_exact",
-            requires = "version"
-        )]
-        displays_version: bool,
-
-        /// Version format string to display when version argument is passed
-        #[arg(long, requires = "displays_version")]
-        version: Option<String>,
-
-        /// Data type of argument (for validation only)
-        #[arg(short, long, name = "type")]
-        type_: Option<String>,
-
-        /// Set choices for values (can be supplied multiple times)
-        #[arg(short, long, action = clap::ArgAction::Append)]
-        choice: Option<Vec<String>>,
-
-        /// When supplied this argument will be marked as required
-        #[arg(short, long)]
-        required: bool,
-
-        /// Help text for this argument
-        #[arg(long)]
-        helptext: Option<String>,
-
-        /// Name to use for this variable in help text
-        #[arg(long)]
-        metavar: Option<String>,
-
-        /// Destination variable name for this argument (default will be inferred from argument
-        /// name)
-        #[arg(long)]
-        dest: Option<String>,
-
-        /// Mark this argument as deprecated
-        #[arg(long)]
-        deprecated: bool,
-
-        /// Optional argument name/flag and aliases. If omitted or if the values does not start with
-        /// '-', then the argument will be treated as positional
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Option<Vec<String>>,
-    },
+    AddArg(AddArgCommand),
     /// Initialize a new subparser
     #[command(name = "subparser_init", long_about=SUBPARSER_INIT_HELP)]
     SubparserInit {
@@ -357,6 +363,11 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
     let py_res = Python::with_gil(|py| {
         let utils =
             PyModule::from_code_bound(py, include_str!("py/utils.py"), "argparsh", "utils")?;
+
+        utils.add_class::<AddArgCommand>()?;
+        utils.add_class::<Action>()?;
+        utils.add_class::<NArgs>()?;
+
         let parser = utils.getattr("Parser")?.call0()?;
 
         let add_arg = parser.getattr("cmd_add_argument")?;
@@ -387,13 +398,8 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                         .getattr("initialize")?
                         .call(parser_args, Some(&parser_kwargs))?;
                 }
-                Command::AddArg {
-                    subparser,
-                    parser_arg,
-                    args,
-                    ..
-                } => {
-                    add_arg.call1((args, subparser, parser_arg))?;
+                Command::AddArg(opts) => {
+                    add_arg.call1((opts,))?;
                 }
                 Command::SubparserInit {
                     subparser,
