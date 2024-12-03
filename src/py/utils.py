@@ -1,6 +1,5 @@
 import argparse
 from dataclasses import dataclass, field
-import uuid
 import sys
 import json
 
