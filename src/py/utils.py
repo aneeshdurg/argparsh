@@ -26,6 +26,15 @@ def arglist_to_kwargs(arglist):
             kwargs[key] = value
     return kwargs
 
+def get_action_str(action):
+    action_to_str = {
+        str(Action.Store): "store",
+        str(Action.StoreTrue): "store_true",
+        str(Action.Append): "append",
+        str(Action.Count): "count",
+        str(Action.Help): "help",
+    }
+    return action_to_str[str(action)]
 
 @dataclass
 class Parser:
@@ -76,7 +85,7 @@ class Parser:
         return self._parsers[metaname][name]
 
     def cmd_add_argument(self, cmd):
-        args = cmd.args
+        args = cmd.args if cmd.args else []
         kwargs = {}
         def add_if_present(name, rename=None):
             v = getattr(cmd, name)
@@ -84,25 +93,40 @@ class Parser:
                 return
             kwargs[rename or name] = v
 
-        add_if_present("choice", "choices")
         # TODO: ???
         # add_if_present("deprecated")
         add_if_present("dest")
-        add_if_present("type_", "type")
         add_if_present("helptext", "help")
         add_if_present("metavar")
 
         if cmd.required:
             add_if_present("required")
 
+        type_ = str
+        if cmd.type_ is not None:
+            type_ = eval(cmd.type_, {}, {})
+            kwargs["type"] = type_
+
+        if cmd.choice is not None:
+            # If we have a type, then cast the choices to that type
+            kwargs["choices"] = [type_(c) for c in cmd.choice]
+
+        if cmd.default is not None:
+            # If we have a type, then cast the default to that type
+            kwargs["default"] = type_(cmd.default)
+
         if cmd.action is not None:
-            kwargs["action"] = str(cmd.action).split(".")[1].lower()
+            kwargs["action"] = get_action_str(cmd.action)
         elif cmd.store_const is not None:
             kwargs["action"] = "store_const"
-            kwargs["const"] = cmd.store_const
+            kwargs["const"] = type_(cmd.store_const)
+            if "type" in kwargs:
+                del kwargs["type"]
         elif cmd.append_const is not None:
             kwargs["action"] = "append_const"
-            kwargs["const"] = cmd.append_const
+            kwargs["const"] = type_(cmd.append_const)
+            if "type" in kwargs:
+                del kwargs["type"]
 
         if cmd.displays_version:
             kwargs["action"] = "version"
@@ -118,7 +142,6 @@ class Parser:
 
 
         p = self.get_parser(cmd.parser_arg, cmd.subparser)
-
         p.add_argument(*args, **kwargs)
 
     def cmd_add_subparser(self, metaname, args, subparser, parser_arg):
@@ -176,6 +199,7 @@ def output_shell(kv: dict, extra_args: list[str], output):
         export = "local "
 
     for k, v in kv.items():
+        v = json.dumps(v)
         print(f"{export}{args.prefix}{k}={repr(v)}", file=output)
 
 

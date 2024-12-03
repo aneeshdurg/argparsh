@@ -49,13 +49,11 @@ enum NArgs {
 enum Action {
     /// Stores a single value
     Store,
-    #[clap(name = "store_const")]
     #[clap(name = "store_true")]
     /// Stores True (creates a boolean flag/niladic flags only)
     StoreTrue,
     /// Appends values together across multiple instances
     Append,
-    #[clap(name = "append_const")]
     /// Counts instances of the flag (niladic flags only)
     Count,
     /// Prints help text
@@ -224,8 +222,12 @@ struct AddArgCommand {
     #[arg(long, conflicts_with = "nargs_exact")]
     nargs: Option<NArgs>,
 
-    #[arg(short, long, default_value = "store")]
-    action: Action,
+    /// The value produced if the argument is absent from the command line
+    #[arg(short, long)]
+    default: Option<String>,
+
+    #[arg(short, long)]
+    action: Option<Action>,
 
     /// Stores a constant value when the flag is passed (niladic flags only)
     #[arg(long, conflicts_with = "action")]
@@ -260,7 +262,7 @@ struct AddArgCommand {
     choice: Option<Vec<String>>,
 
     /// When supplied this argument will be marked as required
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "default")]
     required: bool,
 
     /// Help text for this argument
