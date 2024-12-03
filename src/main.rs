@@ -205,7 +205,7 @@ struct AddArgCommand {
     subparser: Option<String>,
 
     /// Optional parser subparserid that is the parent of the command passed in with --subparser
-    #[arg(long = "parser-arg")]
+    #[arg(long = "parser-arg", requires = "subparser")]
     parser_arg: Option<String>,
 
     /// Number of arguments to consume (cannot be used with --nargs)
@@ -281,6 +281,57 @@ struct AddArgCommand {
     args: Option<Vec<String>>,
 }
 
+#[pyclass(get_all)]
+#[derive(Debug, Args, PartialEq, Encode, Decode)]
+struct AddSubparserCommand {
+    /// Optional parser subparserid that is the parent of the command passed in with --subparser
+    /// This can be used to identify a specific subparser to attach arguments or defaults to
+    /// later.
+    #[arg(long)]
+    subparserid: Option<String>,
+    /// Name of subcommand
+    name: String,
+
+    /// name of the attribute under which sub-command name will be stored; by default the name will be used
+    #[arg(short, long)]
+    dest: Option<String>,
+
+    /// Whether or not a subcommand must be provided, by default False
+    #[arg(short, long)]
+    required: bool,
+
+    /// help text for sub-parser group in help output
+    #[arg(long)]
+    helptext: Option<String>,
+
+    /// string presenting available subcommands in help; by default it is None and presents subcommands in form {cmd1, cmd2, ..}
+    #[arg(short, long)]
+    metavar: Option<String>,
+
+    /// Optional subparser command to add the argument to (for sub-subparsers)
+    #[arg(long)]
+    subparser: Option<String>,
+
+    /// Optional parser subparserid that is the parent of the command passed in with --subparser  (for sub-subparsers)
+    #[arg(long = "parser-arg", requires = "subparser")]
+    parser_arg: Option<String>,
+}
+
+#[pyclass(get_all)]
+#[derive(Debug, Args, PartialEq, Encode, Decode)]
+struct AddSubcommandCommand {
+    /// Optional parser subparserid to add this command to
+    #[arg(long)]
+    subparserid: Option<String>,
+
+    /// Name of subcommand
+    name: String,
+
+    /// help text for sub-parser group in help output
+    #[arg(long)]
+    helptext: Option<String>,
+}
+
 #[derive(Debug, Subcommand, PartialEq, Encode, Decode)]
 enum Command {
     /// Create a new parser with a name and description
@@ -298,32 +349,11 @@ enum Command {
     #[command(name = "add_arg", long_about=ADD_ARG_HELP)]
     AddArg(AddArgCommand),
     /// Initialize a new subparser
-    #[command(name = "subparser_init", long_about=SUBPARSER_INIT_HELP)]
-    SubparserInit {
-        subparserid: Option<String>,
-
-        /// Optional subparser command to add the argument to
-        #[arg(long)]
-        subparser: Option<String>,
-
-        /// Optional parser subparserid that is the parent of the command passed in with --subparser
-        #[arg(long = "parser-arg")]
-        parser_arg: Option<String>,
-
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Option<Vec<String>>,
-    },
+    #[command(name = "add_subparser", long_about=SUBPARSER_INIT_HELP)]
+    AddSubparser(AddSubparserCommand),
     /// Add a command to a subparser. See subparser_init for details
-    #[command(name = "subparser_add")]
-    SubparserAdd {
-        /// Optional parser subparserid that is the parent of the command passed in with --subparser
-        #[arg(long)]
-        subparserid: Option<String>,
-        /// Name of subcommand
-        name: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Option<Vec<String>>,
-    },
+    #[command(name = "add_subcommand")]
+    AddSubcommand(AddSubcommandCommand),
     /// Set default key/value pairs for a parser or subparser
     #[command(name = "set_defaults", long_about=SET_DEFAULTS_HELP)]
     SetDefaults {
@@ -396,20 +426,11 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                 Command::AddArg(opts) => {
                     add_arg.call1((opts,))?;
                 }
-                Command::SubparserInit {
-                    subparser,
-                    parser_arg,
-                    subparserid,
-                    args,
-                } => {
-                    add_subparser.call1((subparserid, args, subparser, parser_arg))?;
+                Command::AddSubparser(opts) => {
+                    add_subparser.call1((opts,))?;
                 }
-                Command::SubparserAdd {
-                    subparserid,
-                    name,
-                    args,
-                } => {
-                    add_subcommand.call1((subparserid, name, args))?;
+                Command::AddSubcommand(opts) => {
+                    add_subcommand.call1((opts,))?;
                 }
                 Command::SetDefaults {
                     subparser,
