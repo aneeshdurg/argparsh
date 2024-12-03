@@ -3,14 +3,19 @@
 Ever wanted to parse arguments in bash but felt frustrated by giant case blocks
 and unfriendly syntax? Ever tried `getopts` but ended up curled on the floor
 sobbing? Have you ever spent sleepless nights hoping that bash argument parsing
-could be as simple as python's `argparse`? Maybe `argparsh` is for you.
+could be as simple as python's
+[argparse](https://docs.python.org/3/library/argparse.html)? Maybe `argparsh` is
+for you.
 
 `argparsh` aims to provide an easy way to construct an argument parsing program
-from any shell.
+from any shell. Unlike most other shell CLI parsing utilities, `argparsh`
+supports advanced features such as subcommands and even provides multiple output
+formats to allow maximum flexibility.
 
 ## Usage
 
-```bash
+```console
+~/$ cat >> argparsh.sh
 # Create a parser that accepts a string and an optional int value
 parser=$({
     # Initialize the parser with the name of the script and a description
@@ -18,13 +23,14 @@ parser=$({
 
     # Add a positional argument - note that args after -- are options to add_arg
     # and not aliases for the argument
-    argparsh add_arg strarg -- --help "My string argument"
+    argparsh add_arg --helptext "My string argument" strarg
 
     # Add a keyword argument that can either be -i <value> or --intarg <value>
-    argparsh add_arg -i --intarg -- \
-        --help "My int argument" \
+    argparsh add_arg \
+        --helptext "My int argument" \
         --type int \
-        --default 10
+        --default 10 \
+        -- -i --intarg
 })
 
 # Parse the input arguments with the parser above
@@ -33,12 +39,32 @@ eval $(argparsh parse $parser -- "$@")
 # Access parsed arguments by name
 echo "String argument was" $strarg
 echo "Integer argument was" $intarg
+~/$ bash argparsh.sh -h
+usage: argparsh.sh [-h] [-i INTARG] strarg
+
+Example parser
+
+positional arguments:
+  strarg                My string argument
+
+options:
+  -h, --help            show this help message and exit
+  -i INTARG, --intarg INTARG
+                        My int argument
+~/$ bash argparsh.sh -i na Hello
+usage: argparsh.sh [-h] [-i INTARG] strarg
+argparsh.sh: error: argument -i/--intarg: invalid int value: 'na'
+~/$ bash argparsh.sh -i 10 Hello
+String argument was Hello
+Integer argument was 10
 ```
 
 See `examples/example.sh` for a complete example, and examples of alternate
 output formats (e.g. parsing CLI arguments into an associative array). The
 `examples` directory has a few other examples that show different ways to use
 `argparsh` in general.
+
+More detailed help/documentation is available by running `argparsh <subcommand> --help`
 
 ## Installation
 
