@@ -60,131 +60,6 @@ enum Action {
     Help,
 }
 
-const ADD_ARG_HELP: &str = r#"
-Add an argument to the parser (separate parsing options and aliases with '--' ).
-This is a wrapper around ArgumentParser.add_argument. In other words, the following invocation:
-    argparsh add_arg [OPTIONS] -- [aliases...]
-Is effectively:
-    parser.add_argument(*[aliases], **{key/values})
-
-note: to add an argument for "-h" or "--help" one will need to run `argparsh -- -h ...`
-note: to add an argument to a subparser use the --subcommand and --subparserid flags. These flags must
-come before any aliases that are being registered. See the section on subparsers below for details.
-"#;
-
-const ADD_SUBPARSER_HELP: &str = r#"
-Initialize a new subparser.
-This is a wrapper around ArgumentParser.add_subparsers.
-
-e.g.
-parser=$({
-    # Create two subcommands `<prog> foo` and `<prog> bar`
-    argparsh subparser_init foobar --required true
-    argparsh subparser_add foo
-    argparsh subparser_add bar
-
-    # Attach a subcommand to `foo`, creating
-    #    <prog> foo fee
-    # -and-
-    #    <prog> foo fie
-    argparsh subparser_init feefie --subcommand foo --required true
-    argparsh subparser_add fee
-    argparsh set_defaults --subcommand fee --myfooarg fee
-    argparsh subparser_add fie
-    argparsh set_defaults --subcommand fie --myfooarg fie
-
-    # Add a regular argument to foo. Note that we now need to
-    # use the subparserid "foobar" so avoid attaching to the wrong
-    # parser. (By default the most recently created parser is
-    # used - in this case the most recently created parser is
-    # feefie)
-    argparsh add_arg --subparserid foobar --subcommand foo "qux"
-    argparsh set_defaults --subparserid foobar --subcommand foo --myarg foo
-
-    # Attach a regular argument to bar
-    argparsh add_arg --subparserid foobar --subcommand bar "baz"
-    argparsh set_defaults --subparserid foobar --subcommand bar --myarg bar
-
-    # possible commands supported by this parser:
-    #   <prog> foo fee <qux>
-    #   <prog> foo fie <qux>
-    #   <prog> bar <baz>
-})
-"#;
-
-const SET_DEFAULTS_HELP: &str = r#"
-Set defaults for parser with key/value pairs.
-
-This is a wrapper around ArgumentParser.set_defaults. The subparser to attach to can be selected
-using `--subcommand` and `--subparserid`. All other key/value pairs are forwarded.
-
-e.g.:
-    parser=$({
-        argparsh subparser_init --subparserid foo --required true
-
-        argparsh subparser_add fee
-        argparsh set_default --subcommand fee --foocmd fee
-
-        argparsh subparser_add fie
-        argparsh set_default --subcommand fee --foocmd fie
-    })
-
-    eval $(argparsh parse $parser -- "$@")
-    echo "value for foo was: " $foocmd
-
-If the above is called as `./prog.sh fee` it will print:
-    value for foo was: fee
-"#;
-
-const PARSE_HELP: &str = r#"
-Parse command line arguments
-
-This command should usually be used with `eval` or some equivalent
-to bring the parsed arguments into scope. e.g.:
-    eval $(argparsh parse $parser -- "$@")
-
-Note that `--` is used to separate arguments to `argparsh parse`
-from the arguments being parsed.
-
-Optionally, the `--format` option can be supplied to change the
-output format.
-
---format shell [--prefix PREFIX] [-e/--export] [-l/--local]
-    By default, the format is "shell", where every parsed argument
-    is created as a shell varaible (with the syntax `KEY=VALUE`).
-    Optionally, a prefix can be supplied with `--prefix` or `-p`:
-        # Parse an argument named "value"
-        parser=$(argparsh add_arg value)
-
-        # Will create an variable named "arg_value"
-        eval $(argparsh parse $parser -p arg_ -- "$@")
-    the flags `--export`/`-e` and `--local`/`-l` will respectively
-    either declare the variables as "export" (make the variable an
-    environment variable) or "local" (bash/zsh only).
-
---format assoc_array --name NAME
-    This declares a new associative array named `NAME` where every
-    argument/value is a key/value entry in the associative array:
-        # Parse an argument named "value"
-        parser=$(argparsh add_arg value)
-
-        # Will create a associative array (dictionary) variable named "args"
-        eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
-
-        # Access the "value" key from $args
-        echo ${args["value"]}
-
---format json
-    outputs the parsed arguments as json
-
-In any mode on failure to parse arguments for any reason (including
-if the arguments invoked the help text), stdout will contain a
-single line with the contents "exit <code>". And argparsh will exit
-with the exit status also being set to `code`. Note that explit
-invocation of help will result in a code of 0, while failure to
-parse arguments will result in a non-zero code.
-"#;
-
 #[pyclass(get_all)]
 #[derive(Debug, Args, PartialEq, Encode, Decode)]
 struct AddArgCommand {
@@ -319,6 +194,131 @@ struct AddSubcommandCommand {
     #[arg(long)]
     helptext: Option<String>,
 }
+
+const ADD_ARG_HELP: &str = r#"
+Add an argument to the parser (separate parsing options and aliases with '--' ).
+This is a wrapper around ArgumentParser.add_argument. In other words, the following invocation:
+    argparsh add_arg [OPTIONS] -- [aliases...]
+Is effectively:
+    parser.add_argument(*[aliases], **{key/values})
+
+note: to add an argument for "-h" or "--help" one will need to run `argparsh -- -h ...`
+note: to add an argument to a subparser use the --subcommand and --subparserid flags. These flags must
+come before any aliases that are being registered. See the section on subparsers below for details.
+"#;
+
+const ADD_SUBPARSER_HELP: &str = r#"
+Initialize a new subparser.
+This is a wrapper around ArgumentParser.add_subparsers.
+
+e.g.
+parser=$({
+    # Create two subcommands `<prog> foo` and `<prog> bar`
+    argparsh subparser_init foobar --required true
+    argparsh subparser_add foo
+    argparsh subparser_add bar
+
+    # Attach a subcommand to `foo`, creating
+    #    <prog> foo fee
+    # -and-
+    #    <prog> foo fie
+    argparsh subparser_init feefie --subcommand foo --required true
+    argparsh subparser_add fee
+    argparsh set_defaults --subcommand fee --myfooarg fee
+    argparsh subparser_add fie
+    argparsh set_defaults --subcommand fie --myfooarg fie
+
+    # Add a regular argument to foo. Note that we now need to
+    # use the subparserid "foobar" so avoid attaching to the wrong
+    # parser. (By default the most recently created parser is
+    # used - in this case the most recently created parser is
+    # feefie)
+    argparsh add_arg --subparserid foobar --subcommand foo "qux"
+    argparsh set_defaults --subparserid foobar --subcommand foo --myarg foo
+
+    # Attach a regular argument to bar
+    argparsh add_arg --subparserid foobar --subcommand bar "baz"
+    argparsh set_defaults --subparserid foobar --subcommand bar --myarg bar
+
+    # possible commands supported by this parser:
+    #   <prog> foo fee <qux>
+    #   <prog> foo fie <qux>
+    #   <prog> bar <baz>
+})
+"#;
+
+const SET_DEFAULTS_HELP: &str = r#"
+Set defaults for parser with key/value pairs.
+
+This is a wrapper around ArgumentParser.set_defaults. The subparser to attach to can be selected
+using `--subcommand` and `--subparserid`. All other key/value pairs are forwarded.
+
+e.g.:
+    parser=$({
+        argparsh subparser_init --subparserid foo --required true
+
+        argparsh subparser_add fee
+        argparsh set_default --subcommand fee --foocmd fee
+
+        argparsh subparser_add fie
+        argparsh set_default --subcommand fee --foocmd fie
+    })
+
+    eval $(argparsh parse $parser -- "$@")
+    echo "value for foo was: " $foocmd
+
+If the above is called as `./prog.sh fee` it will print:
+    value for foo was: fee
+"#;
+
+const PARSE_HELP: &str = r#"
+Parse command line arguments
+
+This command should usually be used with `eval` or some equivalent
+to bring the parsed arguments into scope. e.g.:
+    eval $(argparsh parse $parser -- "$@")
+
+Note that `--` is used to separate arguments to `argparsh parse`
+from the arguments being parsed.
+
+Optionally, the `--format` option can be supplied to change the
+output format.
+
+--format shell [--prefix PREFIX] [-e/--export] [-l/--local]
+    By default, the format is "shell", where every parsed argument
+    is created as a shell varaible (with the syntax `KEY=VALUE`).
+    Optionally, a prefix can be supplied with `--prefix` or `-p`:
+        # Parse an argument named "value"
+        parser=$(argparsh add_arg value)
+
+        # Will create an variable named "arg_value"
+        eval $(argparsh parse $parser -p arg_ -- "$@")
+    the flags `--export`/`-e` and `--local`/`-l` will respectively
+    either declare the variables as "export" (make the variable an
+    environment variable) or "local" (bash/zsh only).
+
+--format assoc_array --name NAME
+    This declares a new associative array named `NAME` where every
+    argument/value is a key/value entry in the associative array:
+        # Parse an argument named "value"
+        parser=$(argparsh add_arg value)
+
+        # Will create a associative array (dictionary) variable named "args"
+        eval $(argparsh parse $parser --format assoc_array --name args -- "$@")
+
+        # Access the "value" key from $args
+        echo ${args["value"]}
+
+--format json
+    outputs the parsed arguments as json
+
+In any mode on failure to parse arguments for any reason (including
+if the arguments invoked the help text), stdout will contain a
+single line with the contents "exit <code>". And argparsh will exit
+with the exit status also being set to `code`. Note that explit
+invocation of help will result in a code of 0, while failure to
+parse arguments will result in a non-zero code.
+"#;
 
 #[derive(Debug, Subcommand, PartialEq, Encode, Decode)]
 enum Command {
