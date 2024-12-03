@@ -15,7 +15,7 @@ formats to allow maximum flexibility.
 ## Usage
 
 ```console
-~/$ cat >> argparsh.sh
+aneesh@earth:~/argparsh$ cat >> argparsh.sh
 # Create a parser that accepts a string and an optional int value
 parser=$({
     # Initialize the parser with the name of the script and a description
@@ -39,7 +39,7 @@ eval $(argparsh parse $parser -- "$@")
 # Access parsed arguments by name
 echo "String argument was" $strarg
 echo "Integer argument was" $intarg
-~/$ bash argparsh.sh -h
+aneesh@earth:~/argparsh$ bash argparsh.sh -h
 usage: argparsh.sh [-h] [-i INTARG] strarg
 
 Example parser
@@ -51,10 +51,10 @@ options:
   -h, --help            show this help message and exit
   -i INTARG, --intarg INTARG
                         My int argument
-~/$ bash argparsh.sh -i na Hello
+aneesh@earth:~/argparsh$ bash argparsh.sh -i na Hello
 usage: argparsh.sh [-h] [-i INTARG] strarg
 argparsh.sh: error: argument -i/--intarg: invalid int value: 'na'
-~/$ bash argparsh.sh -i 10 Hello
+aneesh@earth:~/argparsh$ bash argparsh.sh -i 10 Hello
 String argument was Hello
 Integer argument was 10
 ```
