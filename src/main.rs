@@ -61,18 +61,11 @@ enum Action {
 }
 
 const ADD_ARG_HELP: &str = r#"
-Add an argument to the parser (separate argument aliases and parsing options with '--' ).
+Add an argument to the parser (separate parsing options and aliases with '--' ).
 This is a wrapper around ArgumentParser.add_argument. In other words, the following invocation:
-    argparsh add_arg [aliases]... -- [--key [value]]...
+    argparsh add_arg [OPTIONS] -- [aliases...]
 Is effectively:
-    parser.add_argument(*[aliases], **[key/values])
-
-argparsh is generally smart enough to parse and massage extra arguments into the correct types.
-e.g.
-    argparsh add_argument -i --intval -- --type int --default 10 --choices "[10, 20, 30]"
-
-will become:
-    parser.add_argument("-i", "--intval", type=int, default=100, choices=[10, 20, 30])
+    parser.add_argument(*[aliases], **{key/values})
 
 note: to add an argument for "-h" or "--help" one will need to run `argparsh -- -h ...`
 note: to add an argument to a subparser use the --subparser and --parser-arg flags. These flags must
@@ -274,7 +267,7 @@ struct AddArgCommand {
     metavar: Option<String>,
 
     /// Destination variable name for this argument (default will be inferred from argument
-    /// name)
+    /// aliases)
     #[arg(long)]
     dest: Option<String>,
 
