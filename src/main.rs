@@ -78,7 +78,7 @@ This is a wrapper around ArgumentParser.add_subparser, all keyword arguments are
 python.
 
 The exceptions are:
-    --parser-arg This optional argument should be the metaname
+    --parser-arg This optional argument should be the subparserid
                  of some previously created subparser. (See
                  below)
     --subparser  This optional argument should be the name of a
@@ -105,7 +105,7 @@ parser=$({
     argparsh set_defaults --subparser fie --myfooarg fie
 
     # Add a regular argument to foo. Note that we now need to
-    # use the metaname "foobar" so avoid attaching to the wrong
+    # use the subparserid "foobar" so avoid attaching to the wrong
     # parser. (By default the most recently created parser is
     # used - in this case the most recently created parser is
     # feefie)
@@ -132,7 +132,7 @@ using `--subparser` and `--parser-arg`. All other key/value pairs are forwarded.
 
 e.g.:
     parser=$({
-        argparsh subparser_init --metaname foo --required true
+        argparsh subparser_init --subparserid foo --required true
 
         argparsh subparser_add fee
         argparsh set_default --subparser fee --foocmd fee
@@ -204,7 +204,7 @@ struct AddArgCommand {
     #[arg(long)]
     subparser: Option<String>,
 
-    /// Optional parser metaname that is the parent of the command passed in with --subparser
+    /// Optional parser subparserid that is the parent of the command passed in with --subparser
     #[arg(long = "parser-arg")]
     parser_arg: Option<String>,
 
@@ -300,13 +300,13 @@ enum Command {
     /// Initialize a new subparser
     #[command(name = "subparser_init", long_about=SUBPARSER_INIT_HELP)]
     SubparserInit {
-        metaname: Option<String>,
+        subparserid: Option<String>,
 
         /// Optional subparser command to add the argument to
         #[arg(long)]
         subparser: Option<String>,
 
-        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        /// Optional parser subparserid that is the parent of the command passed in with --subparser
         #[arg(long = "parser-arg")]
         parser_arg: Option<String>,
 
@@ -316,9 +316,9 @@ enum Command {
     /// Add a command to a subparser. See subparser_init for details
     #[command(name = "subparser_add")]
     SubparserAdd {
-        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        /// Optional parser subparserid that is the parent of the command passed in with --subparser
         #[arg(long)]
-        metaname: Option<String>,
+        subparserid: Option<String>,
         /// Name of subcommand
         name: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -331,7 +331,7 @@ enum Command {
         #[arg(long)]
         subparser: Option<String>,
 
-        /// Optional parser metaname that is the parent of the command passed in with --subparser
+        /// Optional parser subparserid that is the parent of the command passed in with --subparser
         #[arg(long = "parser-arg")]
         parser_arg: Option<String>,
 
@@ -399,17 +399,17 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                 Command::SubparserInit {
                     subparser,
                     parser_arg,
-                    metaname,
+                    subparserid,
                     args,
                 } => {
-                    add_subparser.call1((metaname, args, subparser, parser_arg))?;
+                    add_subparser.call1((subparserid, args, subparser, parser_arg))?;
                 }
                 Command::SubparserAdd {
-                    metaname,
+                    subparserid,
                     name,
                     args,
                 } => {
-                    add_subcommand.call1((metaname, name, args))?;
+                    add_subcommand.call1((subparserid, name, args))?;
                 }
                 Command::SetDefaults {
                     subparser,
