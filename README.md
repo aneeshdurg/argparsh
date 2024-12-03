@@ -1,4 +1,4 @@
-# argparsh - python argparse for the shell
+# argparsh
 
 Ever wanted to parse arguments in bash but felt frustrated by giant case blocks
 and unfriendly syntax? Ever tried `getopts` but ended up curled on the floor
@@ -10,7 +10,8 @@ for you.
 `argparsh` aims to provide an easy way to construct an argument parsing program
 from any shell. Unlike most other shell CLI parsing utilities, `argparsh`
 supports advanced features such as subcommands and even provides multiple output
-formats to allow maximum flexibility.
+formats to allow maximum flexibility. `argparsh` uses python's `argparse` library
+for parsing, providing a familiar and well-documented interface.
 
 ## Usage
 
