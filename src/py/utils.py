@@ -26,11 +26,13 @@ def arglist_to_kwargs(arglist):
             kwargs[key] = value
     return kwargs
 
+
 def add_if_present(kwargs, cmd, name, rename=None):
     v = getattr(cmd, name)
     if v is None:
         return
     kwargs[rename or name] = v
+
 
 def get_action_str(action):
     action_to_str = {
@@ -41,6 +43,7 @@ def get_action_str(action):
         str(Action.Help): "help",
     }
     return action_to_str[str(action)]
+
 
 @dataclass
 class Parser:
@@ -134,13 +137,11 @@ class Parser:
         elif cmd.nargs_exact is not None:
             kwargs["nwargs"] = cmd.nargs_exact
 
-
-        p = self.get_parser(cmd.parser_arg, cmd.subparser)
+        p = self.get_parser(cmd.subparserid, cmd.subcommand)
         p.add_argument(*args, **kwargs)
 
     def cmd_add_subparser(self, cmd):
-        subparserid = cmd.subparserid if cmd.subparserid is not None else str(uuid.uuid4())
-        p = self.get_parser(cmd.parser_arg, cmd.subparser)
+        p = self.get_parser(cmd.parent_subparserid, cmd.subcommand)
 
         kwargs = {}
         kwargs["title"] = cmd.name
@@ -151,10 +152,15 @@ class Parser:
         if cmd.required:
             kwargs["required"] = True
 
+        subparserid = cmd.subparserid if cmd.subparserid is not None else cmd.name
         self._subparsers[subparserid] = p.add_subparsers(**kwargs)
 
     def cmd_add_subcommand(self, cmd):
-        subparserid = cmd.subparserid if cmd.subparserid is not None else list(self._subparsers.keys())[-1]
+        subparserid = (
+            cmd.subparserid
+            if cmd.subparserid is not None
+            else list(self._subparsers.keys())[-1]
+        )
         if subparserid not in self._parsers:
             self._parsers[subparserid] = {}
 
@@ -164,9 +170,9 @@ class Parser:
             cmd.name, **kwargs
         )
 
-    def cmd_set_defaults(self, subparser, parser_arg, args):
+    def cmd_set_defaults(self, subparser, subparserid, args):
         kwargs = arglist_to_kwargs(args)
-        p = self.get_parser(parser_arg, subparser)
+        p = self.get_parser(subparserid, subparser)
         p.set_defaults(**kwargs)
 
 
@@ -179,6 +185,12 @@ def output_format(name: str):
         return f
 
     return deco
+
+
+def dump(value):
+    if isinstance(value, (int, float, str)):
+        return repr(value)
+    return repr(json.dumps(value))
 
 
 @output_format("shell")
@@ -211,8 +223,8 @@ def output_shell(kv: dict, extra_args: list[str], output):
         export = "local "
 
     for k, v in kv.items():
-        v = json.dumps(v)
-        print(f"{export}{args.prefix}{k}={repr(v)}", file=output)
+        v = dump(v)
+        print(f"{export}{args.prefix}{k}={v}", file=output)
 
 
 @output_format("assoc_array")

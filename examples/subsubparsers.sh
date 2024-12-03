@@ -3,21 +3,21 @@
 parser=$({
   argparsh new $0
 
-  argparsh subparser_init foobar --required true
-  argparsh subparser_add foo
-  argparsh subparser_add bar
+  argparsh add_subparser foobar --required
+  argparsh add_subcommand foo
+  argparsh add_subcommand bar
 
-  argparsh subparser_init feefie --subparser foo --required true
-  argparsh subparser_add fee
-  argparsh set_defaults --subparser fee --myfooarg fee
-  argparsh subparser_add fie
-  argparsh set_defaults --subparser fie --myfooarg fie
+  argparsh add_subparser feefie --subcommand foo --required
+  argparsh add_subcommand fee
+  argparsh set_defaults --subcommand fee --myfooarg fee
+  argparsh add_subcommand fie
+  argparsh set_defaults --subcommand fie --myfooarg fie
 
-  argparsh add_arg --parser-arg foobar --subparser foo "qux"
-  argparsh set_defaults --parser-arg foobar --subparser foo --myarg foo
+  argparsh add_arg --subparserid foobar --subcommand foo "qux"
+  argparsh set_defaults --subparserid foobar --subcommand foo --myarg foo
 
-  argparsh add_arg --parser-arg foobar --subparser bar "baz"
-  argparsh set_defaults --parser-arg foobar --subparser bar --myarg bar
+  argparsh add_arg --subparserid foobar --subcommand bar "baz"
+  argparsh set_defaults --subparserid foobar --subcommand bar --myarg bar
 })
 
 argparsh parse $parser -- "$@"

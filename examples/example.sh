@@ -3,21 +3,19 @@
 # Create a parser program
 parser=$({
   argparsh new $0 -d "argparsh example" -e "bye!"
-  argparsh add_arg "a" -- \
-    --choices "['a', 'b', 'c']"\
-    --help "single letter arg"
-  argparsh add_arg "-i" "--interval" -- --type int --default 10
-  argparsh add_arg "-f" -- --action store_true
+  argparsh add_arg \
+    --choice a --choice b --choice c \
+    --helptext "single letter arg" \
+    -- "a"
+  argparsh add_arg --type int --default 10 -- "-i" "--interval"
+  argparsh add_arg --action store_true -- "-f"
 
-  argparsh subparser_init --required true
-  argparsh subparser_add foo
-  argparsh subparser_add bar
+  argparsh add_subparser foobar --required
+  argparsh add_subcommand foo
+  argparsh add_subcommand bar
 
-  argparsh add_arg --subparser foo "qux"
-  argparsh set_defaults --subparser foo --myarg foo
-
-  argparsh add_arg --subparser bar "baz"
-  argparsh set_defaults --subparser bar --myarg bar
+  argparsh add_arg --subcommand foo "qux"
+  argparsh add_arg --subcommand bar "baz"
 })
 
 # Parse cli arguments as shell variables prefixg ed with "arg_"
@@ -41,4 +39,4 @@ fi
 eval $(argparsh parse $parser --format assoc-array --name args -- "$@")
 echo "argument keys:" ${!args[@]}
 echo "argument values:" ${args[@]}
-echo "args['myarg'] =" ${args["myarg"]}
+echo "args['foobar'] =" ${args["foobar"]}

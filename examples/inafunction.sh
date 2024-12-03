@@ -5,8 +5,8 @@ myutility() {
   local parser=$({
     argparsh new myutility -d "my favorite utility function"
 
-    argparsh add_arg "src" -- --help "source path"
-    argparsh add_arg "dst" -- --help "dest path"
+    argparsh add_arg --helptext "source path" "src"
+    argparsh add_arg --helptext "dest path" "dst"
   })
 
   # declare argument as local variables

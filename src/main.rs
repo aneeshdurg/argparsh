@@ -68,24 +68,13 @@ Is effectively:
     parser.add_argument(*[aliases], **{key/values})
 
 note: to add an argument for "-h" or "--help" one will need to run `argparsh -- -h ...`
-note: to add an argument to a subparser use the --subparser and --parser-arg flags. These flags must
+note: to add an argument to a subparser use the --subcommand and --subparserid flags. These flags must
 come before any aliases that are being registered. See the section on subparsers below for details.
 "#;
 
-const SUBPARSER_INIT_HELP: &str = r#"
+const ADD_SUBPARSER_HELP: &str = r#"
 Initialize a new subparser.
-This is a wrapper around ArgumentParser.add_subparser, all keyword arguments are forwarded to
-python.
-
-The exceptions are:
-    --parser-arg This optional argument should be the subparserid
-                 of some previously created subparser. (See
-                 below)
-    --subparser  This optional argument should be the name of a
-                 command attached to a previously created
-                 subparser that we would like to create a new
-                 subparser under. (See below)
-Note that these two args MUST come before any others
+This is a wrapper around ArgumentParser.add_subparsers.
 
 e.g.
 parser=$({
@@ -98,23 +87,23 @@ parser=$({
     #    <prog> foo fee
     # -and-
     #    <prog> foo fie
-    argparsh subparser_init feefie --subparser foo --required true
+    argparsh subparser_init feefie --subcommand foo --required true
     argparsh subparser_add fee
-    argparsh set_defaults --subparser fee --myfooarg fee
+    argparsh set_defaults --subcommand fee --myfooarg fee
     argparsh subparser_add fie
-    argparsh set_defaults --subparser fie --myfooarg fie
+    argparsh set_defaults --subcommand fie --myfooarg fie
 
     # Add a regular argument to foo. Note that we now need to
     # use the subparserid "foobar" so avoid attaching to the wrong
     # parser. (By default the most recently created parser is
     # used - in this case the most recently created parser is
     # feefie)
-    argparsh add_arg --parser-arg foobar --subparser foo "qux"
-    argparsh set_defaults --parser-arg foobar --subparser foo --myarg foo
+    argparsh add_arg --subparserid foobar --subcommand foo "qux"
+    argparsh set_defaults --subparserid foobar --subcommand foo --myarg foo
 
     # Attach a regular argument to bar
-    argparsh add_arg --parser-arg foobar --subparser bar "baz"
-    argparsh set_defaults --parser-arg foobar --subparser bar --myarg bar
+    argparsh add_arg --subparserid foobar --subcommand bar "baz"
+    argparsh set_defaults --subparserid foobar --subcommand bar --myarg bar
 
     # possible commands supported by this parser:
     #   <prog> foo fee <qux>
@@ -126,19 +115,18 @@ parser=$({
 const SET_DEFAULTS_HELP: &str = r#"
 Set defaults for parser with key/value pairs.
 
-This is a wrapper around ArgumentParser.set_defaults, and is commonly used to attach default values
-to a subparser to determine which subcommand was called. The subparser to attach to can be selected
-using `--subparser` and `--parser-arg`. All other key/value pairs are forwarded.
+This is a wrapper around ArgumentParser.set_defaults. The subparser to attach to can be selected
+using `--subcommand` and `--subparserid`. All other key/value pairs are forwarded.
 
 e.g.:
     parser=$({
         argparsh subparser_init --subparserid foo --required true
 
         argparsh subparser_add fee
-        argparsh set_default --subparser fee --foocmd fee
+        argparsh set_default --subcommand fee --foocmd fee
 
         argparsh subparser_add fie
-        argparsh set_default --subparser fee --foocmd fie
+        argparsh set_default --subcommand fee --foocmd fie
     })
 
     eval $(argparsh parse $parser -- "$@")
@@ -202,11 +190,11 @@ parse arguments will result in a non-zero code.
 struct AddArgCommand {
     /// Optional subparser command to add the argument to
     #[arg(long)]
-    subparser: Option<String>,
+    subcommand: Option<String>,
 
-    /// Optional parser subparserid that is the parent of the command passed in with --subparser
-    #[arg(long = "parser-arg", requires = "subparser")]
-    parser_arg: Option<String>,
+    /// Optional parser subparserid that is the parent of the command passed in with --subcommand
+    #[arg(long, requires = "subcommand")]
+    subparserid: Option<String>,
 
     /// Number of arguments to consume (cannot be used with --nargs)
     #[arg(short, long)]
@@ -284,7 +272,7 @@ struct AddArgCommand {
 #[pyclass(get_all)]
 #[derive(Debug, Args, PartialEq, Encode, Decode)]
 struct AddSubparserCommand {
-    /// Optional parser subparserid that is the parent of the command passed in with --subparser
+    /// Optional parser subparserid that is the parent of the command passed in with --subcommand
     /// This can be used to identify a specific subparser to attach arguments or defaults to
     /// later.
     #[arg(long)]
@@ -310,11 +298,11 @@ struct AddSubparserCommand {
 
     /// Optional subparser command to add the argument to (for sub-subparsers)
     #[arg(long)]
-    subparser: Option<String>,
+    subcommand: Option<String>,
 
-    /// Optional parser subparserid that is the parent of the command passed in with --subparser  (for sub-subparsers)
-    #[arg(long = "parser-arg", requires = "subparser")]
-    parser_arg: Option<String>,
+    /// Optional parser subparserid that is the parent of the command passed in with --subcommand  (for sub-subparsers)
+    #[arg(long, requires = "subcommand")]
+    parent_subparserid: Option<String>,
 }
 
 #[pyclass(get_all)]
@@ -349,7 +337,7 @@ enum Command {
     #[command(name = "add_arg", long_about=ADD_ARG_HELP)]
     AddArg(AddArgCommand),
     /// Initialize a new subparser
-    #[command(name = "add_subparser", long_about=SUBPARSER_INIT_HELP)]
+    #[command(name = "add_subparser", long_about=ADD_SUBPARSER_HELP)]
     AddSubparser(AddSubparserCommand),
     /// Add a command to a subparser. See subparser_init for details
     #[command(name = "add_subcommand")]
@@ -357,13 +345,13 @@ enum Command {
     /// Set default key/value pairs for a parser or subparser
     #[command(name = "set_defaults", long_about=SET_DEFAULTS_HELP)]
     SetDefaults {
-        /// Optional subparser command to add the argument to
+        /// Optional subcommand to add the argument to
         #[arg(long)]
-        subparser: Option<String>,
+        subcommand: Option<String>,
 
-        /// Optional parser subparserid that is the parent of the command passed in with --subparser
-        #[arg(long = "parser-arg")]
-        parser_arg: Option<String>,
+        /// Optional subparserid that is the parent of the command passed in with --subcommand
+        #[arg(long)]
+        subparserid: Option<String>,
 
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Option<Vec<String>>,
@@ -433,8 +421,8 @@ fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
                     add_subcommand.call1((opts,))?;
                 }
                 Command::SetDefaults {
-                    subparser,
-                    parser_arg,
+                    subcommand: subparser,
+                    subparserid: parser_arg,
                     args,
                 } => {
                     set_defaults.call1((subparser, parser_arg, args))?;

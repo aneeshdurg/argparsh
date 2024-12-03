@@ -22,15 +22,15 @@ stop_collection() {
 
 parser=$({
   argparsh new $0 -d "Stopwatch that collects stats while active"
-  argparsh subparser_init command --required true
+  argparsh add_subparser command --required
 
-  argparsh subparser_add start
-  argparsh set_defaults --subparser start --command start_collection
-  argparsh subparser_add stop
-  argparsh set_defaults --subparser stop --command stop_collection
+  argparsh add_subcommand start --helptext "Start collection"
+  argparsh set_defaults --subcommand start --command start_collection
+  argparsh add_subcommand stop --helptext "Kill running collection job"
+  argparsh set_defaults --subcommand stop --command stop_collection
 
-  argparsh add_arg --subparser start "outdir"
-  argparsh add_arg --subparser start -i --interval -- --type int --default 1
+  argparsh add_arg --subcommand start "outdir"
+  argparsh add_arg --subcommand start --type int --default 1 -- -i --interval
 })
 eval $(argparsh parse $parser --format assoc-array --name args_ -- "$@")
 
