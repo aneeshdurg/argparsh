@@ -1,3 +1,4 @@
+use std::vec::Vec;
 use bitcode::{Decode, Encode};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use pyo3::prelude::*;
