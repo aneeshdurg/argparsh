@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: "checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "install rust"
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: "build release binary"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: "package artifact"
+        run: |
+          set -euo pipefail
+          staging="argparsh-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir "$staging"
+          cp target/${{ matrix.target }}/release/argparsh "$staging/"
+          cp README.md LICENSE "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+
+      - name: "upload build artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: argparsh-${{ matrix.target }}
+          path: argparsh-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: "download build artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: "create release"
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          generate_release_notes: true
