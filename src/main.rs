@@ -1,8 +1,8 @@
 use std::vec::Vec;
 use bitcode::{Decode, Encode};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+
+mod argparse;
 
 const DELIMITER: &str = "&";
 
@@ -34,7 +34,6 @@ impl ToString for Format {
     }
 }
 
-#[pyclass(eq, eq_int)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum NArgs {
     /// '+' consumes at least one argument but possibly many
@@ -45,7 +44,6 @@ enum NArgs {
     Many,
 }
 
-#[pyclass(eq, eq_int)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum Action {
     /// Stores a single value
@@ -61,7 +59,6 @@ enum Action {
     Help,
 }
 
-#[pyclass(get_all)]
 #[derive(Debug, Args, PartialEq, Encode, Decode)]
 struct AddArgCommand {
     /// Optional subparser command to add the argument to
@@ -145,7 +142,6 @@ struct AddArgCommand {
     args: Option<Vec<String>>,
 }
 
-#[pyclass(get_all)]
 #[derive(Debug, Args, PartialEq, Encode, Decode)]
 struct AddSubparserCommand {
     /// Optional parser subparserid that is the parent of the command passed in with --subcommand
@@ -181,7 +177,6 @@ struct AddSubparserCommand {
     parent_subparserid: Option<String>,
 }
 
-#[pyclass(get_all)]
 #[derive(Debug, Args, PartialEq, Encode, Decode)]
 struct AddSubcommandCommand {
     /// Optional parser subparserid to add this command to
@@ -365,83 +360,149 @@ enum Command {
         #[arg(short, long, value_enum, default_value_t=Format::Shell)]
         format: Format,
 
+        /// Prefix to add to every declared variable (shell format only)
+        #[arg(short, long)]
+        prefix: Option<String>,
+
+        /// Export declarations to the environment (shell format only)
+        #[arg(short, long)]
+        export: bool,
+
+        /// Declare variable as local (shell format only)
+        #[arg(short, long)]
+        local: bool,
+
+        /// Name of variable to output into (assoc_array format only)
+        #[arg(short, long)]
+        name: Option<String>,
+
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Option<Vec<String>>,
     },
 }
 
-fn parse(parser: String, args: Option<Vec<String>>, format: Format) {
+fn parse(
+    parser: String,
+    args: Option<Vec<String>>,
+    format: Format,
+    prefix: Option<String>,
+    export: bool,
+    local: bool,
+    name: Option<String>,
+) {
     let mut actions = parser.split(DELIMITER);
     actions.next();
 
-    let py_res = Python::with_gil(|py| {
-        let utils =
-            PyModule::from_code_bound(py, include_str!("py/utils.py"), "argparsh", "utils")?;
+    let mut parser_model = argparse::Parser::new();
+    for act in actions {
+        let cmd_json = urlencoding::decode_binary(act.as_bytes());
+        let cmd: Command = bitcode::decode(&cmd_json).unwrap();
+        match cmd {
+            Command::New { name, description, epilog } => {
+                parser_model.initialize(name, description, epilog);
+            }
+            Command::AddArg(opts) => {
+                parser_model.add_argument(opts);
+            }
+            Command::AddSubparser(opts) => {
+                parser_model.add_subparser(opts);
+            }
+            Command::AddSubcommand(opts) => {
+                parser_model.add_subcommand(opts);
+            }
+            Command::SetDefaults {
+                subcommand,
+                subparserid,
+                args,
+            } => {
+                parser_model.set_defaults(subcommand, subparserid, args);
+            }
+            Command::Parse { .. } => unreachable!(),
+        }
+    }
 
-        utils.add_class::<AddArgCommand>()?;
-        utils.add_class::<Action>()?;
-        utils.add_class::<NArgs>()?;
+    let input_args = args.unwrap_or_default();
+    // Split into extra_args (before --) and args (after --)
+    let mut extra_args = Vec::new();
+    let mut found_sep = false;
+    let mut remaining = input_args;
+    while let Some(first) = remaining.first() {
+        if first == "--" {
+            remaining.remove(0);
+            found_sep = true;
+            break;
+        }
+        extra_args.push(remaining.remove(0));
+    }
+    if !found_sep {
+        remaining = extra_args;
+        extra_args = Vec::new();
+    }
 
-        let parser = utils.getattr("Parser")?.call0()?;
-
-        let add_arg = parser.getattr("cmd_add_argument")?;
-        let add_subparser = parser.getattr("cmd_add_subparser")?;
-        let add_subcommand = parser.getattr("cmd_add_subcommand")?;
-        let set_defaults = parser.getattr("cmd_set_defaults")?;
-
-        for act in actions {
-            let cmd_json = urlencoding::decode_binary(act.as_bytes());
-            let cmd: Command = bitcode::decode(&cmd_json).unwrap();
-            match cmd {
-                Command::New {
-                    name,
-                    description,
-                    epilog,
-                } => {
-                    let parser_args = PyTuple::new_bound(py, vec![name]);
-
-                    let parser_kwargs = PyDict::new_bound(py);
-                    if let Some(v) = description {
-                        parser_kwargs.set_item("description", v)?;
+    match parser_model.parse_args(remaining) {
+        argparse::ParseResult::Success(kv) => {
+            match format {
+                Format::JSON => {
+                    let mut json_kv = serde_json::Map::new();
+                    for (k, v) in &kv {
+                        json_kv.insert(k.clone(), v.clone().into());
                     }
-                    if let Some(v) = epilog {
-                        parser_kwargs.set_item("epilog", v)?;
+                    let value = serde_json::Value::Object(json_kv);
+                    let json = serde_json::to_string_pretty(&value).unwrap();
+                    println!("{}", json);
+                }
+                Format::Shell => {
+                    let prefix_str = prefix.unwrap_or_default();
+                    let export_str = if export {
+                        "export "
+                    } else if local {
+                        "local "
+                    } else {
+                        ""
+                    };
+                    for (k, v) in &kv {
+                        println!("{}{}{}={}", export_str, prefix_str, k, format_value(v));
                     }
-
-                    parser
-                        .getattr("initialize")?
-                        .call(parser_args, Some(&parser_kwargs))?;
                 }
-                Command::AddArg(opts) => {
-                    add_arg.call1((opts,))?;
+                Format::AssocArray => {
+                    let name_str = name.unwrap_or_default();
+                    println!("declare -A {}", name_str);
+                    for (k, v) in &kv {
+                        println!("{}[\"{}\"]={}", name_str, k, format_value(v));
+                    }
                 }
-                Command::AddSubparser(opts) => {
-                    add_subparser.call1((opts,))?;
-                }
-                Command::AddSubcommand(opts) => {
-                    add_subcommand.call1((opts,))?;
-                }
-                Command::SetDefaults {
-                    subcommand: subparser,
-                    subparserid: parser_arg,
-                    args,
-                } => {
-                    set_defaults.call1((subparser, parser_arg, args))?;
-                }
-                Command::Parse { .. } => unreachable!(),
             }
         }
+        argparse::ParseResult::Help(help_text) => {
+            if std::env::var("ARGPARSH_DEBUG_HELP").is_ok() {
+                use std::io::Write;
+                std::fs::File::create("/tmp/rust_help.txt").unwrap().write_all(help_text.as_bytes()).unwrap();
+            }
+            eprint!("{}", help_text);
+            println!("exit 0");
+            std::process::exit(0);
+        }
+        argparse::ParseResult::Version(v) => {
+            eprintln!("{}", v);
+            println!("exit 0");
+            std::process::exit(0);
+        }
+        argparse::ParseResult::Error(err) => {
+            eprintln!("{}\n{}", parser_model.usage_line(), err);
+            println!("exit 2");
+            std::process::exit(2);
+        }
+    }
+}
 
-        utils
-            .getattr("run_parse")?
-            .call1((parser, format.to_string(), args))?;
-        PyResult::Ok(0)
-    });
-
-    if let Err(ref x) = py_res {
-        Python::with_gil(|py| {
-            x.print_and_set_sys_last_vars(py);
-        });
+fn format_value(v: &argparse::ArgValue) -> String {
+    match v {
+        argparse::ArgValue::String(s) => s.clone(),
+        argparse::ArgValue::Int(i) => i.to_string(),
+        argparse::ArgValue::Float(f) => f.to_string(),
+        argparse::ArgValue::Bool(b) => b.to_string(),
+        argparse::ArgValue::Null => "null".to_string(),
+        argparse::ArgValue::List(lst) => lst.iter().map(|x| format_value(x)).collect::<Vec<_>>().join(" "),
     }
 }
 
@@ -451,9 +512,13 @@ fn main() {
         Command::Parse {
             parser,
             format,
+            prefix,
+            export,
+            local,
+            name,
             args,
         } => {
-            parse(parser, args, format);
+            parse(parser, args, format, prefix, export, local, name);
         }
         _ => {
             let json = bitcode::encode(&cli.command);

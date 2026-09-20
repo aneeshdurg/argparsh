@@ -10,8 +10,8 @@ for you.
 `argparsh` aims to provide an easy way to construct an argument parsing program
 from any shell. Unlike most other shell CLI parsing utilities, `argparsh`
 supports advanced features such as subcommands and even provides multiple output
-formats to allow maximum flexibility. `argparsh` uses python's `argparse` library
-for parsing, providing a familiar and well-documented interface.
+formats to allow maximum flexibility. `argparsh` reimplements the familiar,
+well-documented `argparse` interface in pure Rust — no Python runtime required.
 
 ## Usage
 
