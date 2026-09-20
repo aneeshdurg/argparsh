@@ -56,6 +56,7 @@ name = "argparsh"
 version = "1.0.1"
 dependencies = [
  "bitcode",
+ "bitcode_derive",
  "clap",
  "serde",
  "serde_json",

@@ -1,0 +1,12 @@
+# Default to the fully-static musl target for local `cargo build` / `cargo test` /
+# `cargo install --path .`. With the Python runtime gone, this yields the single
+# self-contained ELF binary — the smaller, faster one we also ship in the release
+# matrix (x86_64-unknown-linux-musl).
+#
+# Override per-invocation with `cargo build --target <other-target>`, or delete this
+# file to build for the native target again.
+#
+# Note: the gnu CI test job pins its own target (see .github/workflows/test.yml) and
+# release.yml passes an explicit --target per matrix entry, so both are unaffected.
+[build]
+target = "x86_64-unknown-linux-musl"

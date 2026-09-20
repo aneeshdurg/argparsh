@@ -41,7 +41,6 @@ impl From<CliAction> for Action {
             CliAction::Append => Action::Append,
             CliAction::Count => Action::Count,
             CliAction::Help => Action::Help,
-            _ => Action::Store,
         }
     }
 }
@@ -93,7 +92,6 @@ pub struct Argument {
     pub required: bool,
     pub help: Option<String>,
     pub metavar: Option<String>,
-    pub deprecated: bool,
     pub const_: Option<ArgValue>,
 }
 
@@ -182,7 +180,6 @@ impl Parser {
             required: false,
             help: Some("show this help message and exit".to_string()),
             metavar: None,
-            deprecated: false,
             const_: None,
         });
     }
@@ -206,21 +203,6 @@ impl Parser {
         match node {
             Node::S(s) => s,
             _ => panic!("expected subparser at end of path"),
-        }
-    }
-
-    fn parser_at(&self, path: &[PathStep]) -> &Parser {
-        let mut node = Node::P(self);
-        for step in path {
-            node = match (node, step) {
-                (Node::P(p), PathStep::Sub(i)) => Node::S(&p.subparsers[*i]),
-                (Node::S(s), PathStep::Cmd(i)) => Node::P(&s.commands[*i].parser),
-                _ => panic!("bad parser path"),
-            };
-        }
-        match node {
-            Node::P(p) => p,
-            _ => panic!("expected parser at end of path"),
         }
     }
 
@@ -367,7 +349,6 @@ impl Parser {
             required: opts.required,
             help: opts.helptext,
             metavar: opts.metavar,
-            deprecated: opts.deprecated,
             const_: opts.store_const.map(|c| parse_value(&c, &type_)),
         };
 
@@ -437,7 +418,7 @@ impl Parser {
             parser: Parser::new(),
         };
         sc.parser.name = name.clone();
-        let mut sp = self.subparser_at_mut(&sp_path);
+        let sp = self.subparser_at_mut(&sp_path);
         sp.commands.push(sc);
     }
 
@@ -464,7 +445,7 @@ impl Parser {
             .collect();
 
         let path = self.arg_target_path(&subcommand, &subparserid);
-        let mut target = self.parser_at_mut(&path);
+        let target = self.parser_at_mut(&path);
         for (k, v) in pairs {
             target.defaults.insert(k.clone(), parse_value(&v, &None));
         }
@@ -589,7 +570,6 @@ impl Parser {
                                     }
                                 }
                             }
-                            _ => 1,
                         }
                     }
                     None => {
@@ -1216,22 +1196,33 @@ fn format_subparser_line(sp: &Subparser, help_position: usize) -> String {
         (format!("{}{}\n", indent, metavar), help_position)
     };
     let help_text = sp.help.clone().unwrap_or_default();
+    let mut help_str = String::new();
     if !help_text.is_empty() {
         let help_width = std::cmp::max(78 - help_position, 11);
         let wrapped = wrap_text(&help_text, help_width);
-        let help_lines: Vec<&str> = wrapped.split('\n').collect();
-        let mut help_str = String::new();
-        for (i, line) in help_lines.iter().enumerate() {
-            if i == 0 {
-                help_str.push_str(&format!("{:w$}{}", line, w = indent_first));
-            } else {
-                help_str.push_str(&format!("{:w$}{}", line, w = help_position));
+        for (i, line) in wrapped.split('\n').enumerate() {
+            let pad = if i == 0 { indent_first } else { help_position };
+            help_str.push_str(&format!("{0:1$}", line, pad));
+        }
+    }
+    let mut out = format!("{}{}\n", action_header_str, help_str);
+    // Render each subcommand's help text (argparse lists the subcommands under
+    // the subparser metavar). This is what `Subcommand.help` is for.
+    let name_width = sp
+        .commands
+        .iter()
+        .map(|c| c.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    for c in &sp.commands {
+        if let Some(h) = &c.help {
+            if !h.is_empty() {
+                out.push_str(&format!("    {0:1$}  {2}\n", c.name, name_width, h));
             }
         }
-        format!("{}{}\n", action_header_str, help_str)
-    } else {
-        format!("{}\n", action_header_str)
     }
+    out
 }
 
 fn wrap_text(text: &str, width: usize) -> String {
@@ -1259,7 +1250,7 @@ fn format_arg_line(a: &Argument, help_position: usize) -> String {
     let action_header = format_action_invocation(a);
     let action_width = help_position - 4;
     let indent = "  ";
-    let (action_header_str, indent_first) = if action_header.len() <= action_width {
+    let (action_header_str, _indent_first) = if action_header.len() <= action_width {
         (
             format!("{}{:width$}  ", indent, action_header, width = action_width),
             0,
@@ -1277,7 +1268,7 @@ fn format_arg_line(a: &Argument, help_position: usize) -> String {
             if i == 0 {
                 help_str.push_str(line);
             } else {
-                help_str.push_str(&format!("{:w$}{}", line, w = help_position));
+                help_str.push_str(&format!("{0:1$}", line, help_position));
             }
         }
         format!("{}{}\n", action_header_str, help_str)

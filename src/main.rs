@@ -1,6 +1,6 @@
-use std::vec::Vec;
 use bitcode::{Decode, Encode};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::vec::Vec;
 
 mod argparse;
 
@@ -398,7 +398,11 @@ fn parse(
         let cmd_json = urlencoding::decode_binary(act.as_bytes());
         let cmd: Command = bitcode::decode(&cmd_json).unwrap();
         match cmd {
-            Command::New { name, description, epilog } => {
+            Command::New {
+                name,
+                description,
+                epilog,
+            } => {
                 parser_model.initialize(name, description, epilog);
             }
             Command::AddArg(opts) => {
@@ -435,48 +439,49 @@ fn parse(
         extra_args.push(remaining.remove(0));
     }
     if !found_sep {
-        remaining = extra_args;
-        extra_args = Vec::new();
+        remaining = extra_args.clone();
+        extra_args.clear();
     }
 
     match parser_model.parse_args(remaining) {
-        argparse::ParseResult::Success(kv) => {
-            match format {
-                Format::JSON => {
-                    let mut json_kv = serde_json::Map::new();
-                    for (k, v) in &kv {
-                        json_kv.insert(k.clone(), v.clone().into());
-                    }
-                    let value = serde_json::Value::Object(json_kv);
-                    let json = serde_json::to_string_pretty(&value).unwrap();
-                    println!("{}", json);
+        argparse::ParseResult::Success(kv) => match format {
+            Format::JSON => {
+                let mut json_kv = serde_json::Map::new();
+                for (k, v) in &kv {
+                    json_kv.insert(k.clone(), v.clone().into());
                 }
-                Format::Shell => {
-                    let prefix_str = prefix.unwrap_or_default();
-                    let export_str = if export {
-                        "export "
-                    } else if local {
-                        "local "
-                    } else {
-                        ""
-                    };
-                    for (k, v) in &kv {
-                        println!("{}{}{}={}", export_str, prefix_str, k, format_value(v));
-                    }
-                }
-                Format::AssocArray => {
-                    let name_str = name.unwrap_or_default();
-                    println!("declare -A {}", name_str);
-                    for (k, v) in &kv {
-                        println!("{}[\"{}\"]={}", name_str, k, format_value(v));
-                    }
+                let value = serde_json::Value::Object(json_kv);
+                let json = serde_json::to_string_pretty(&value).unwrap();
+                println!("{}", json);
+            }
+            Format::Shell => {
+                let prefix_str = prefix.unwrap_or_default();
+                let export_str = if export {
+                    "export "
+                } else if local {
+                    "local "
+                } else {
+                    ""
+                };
+                for (k, v) in &kv {
+                    println!("{}{}{}={}", export_str, prefix_str, k, format_value(v));
                 }
             }
-        }
+            Format::AssocArray => {
+                let name_str = name.unwrap_or_default();
+                println!("declare -A {}", name_str);
+                for (k, v) in &kv {
+                    println!("{}[\"{}\"]={}", name_str, k, format_value(v));
+                }
+            }
+        },
         argparse::ParseResult::Help(help_text) => {
             if std::env::var("ARGPARSH_DEBUG_HELP").is_ok() {
                 use std::io::Write;
-                std::fs::File::create("/tmp/rust_help.txt").unwrap().write_all(help_text.as_bytes()).unwrap();
+                std::fs::File::create("/tmp/rust_help.txt")
+                    .unwrap()
+                    .write_all(help_text.as_bytes())
+                    .unwrap();
             }
             eprint!("{}", help_text);
             println!("exit 0");
@@ -502,7 +507,11 @@ fn format_value(v: &argparse::ArgValue) -> String {
         argparse::ArgValue::Float(f) => f.to_string(),
         argparse::ArgValue::Bool(b) => b.to_string(),
         argparse::ArgValue::Null => "null".to_string(),
-        argparse::ArgValue::List(lst) => lst.iter().map(|x| format_value(x)).collect::<Vec<_>>().join(" "),
+        argparse::ArgValue::List(lst) => lst
+            .iter()
+            .map(|x| format_value(x))
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 
