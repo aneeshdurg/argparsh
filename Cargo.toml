@@ -1,6 +1,6 @@
 [package]
 name = "argparsh"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 authors = ["Aneesh Durg <aneeshdurg17@gmail.com>"]
 license = "MIT"
