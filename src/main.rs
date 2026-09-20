@@ -13,7 +13,7 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Encode, Decode)]
 enum Format {
     /// Shell
     Shell,
@@ -21,16 +21,19 @@ enum Format {
     AssocArray,
     /// json
     JSON,
+    /// Custom format string (%k = key, %v = value)
+    #[clap(skip)]
+    Custom(String),
 }
 
 impl ToString for Format {
     fn to_string(&self) -> String {
         match self {
-            Format::Shell => "shell",
-            Format::AssocArray => "assoc_array",
-            Format::JSON => "json",
+            Format::Shell => "shell".to_string(),
+            Format::AssocArray => "assoc_array".to_string(),
+            Format::JSON => "json".to_string(),
+            Format::Custom(fmt) => format!("custom:{fmt}"),
         }
-        .to_string()
     }
 }
 
@@ -308,6 +311,28 @@ output format.
 --format json
     outputs the parsed arguments as json
 
+--custom-format FORMAT
+    outputs each parsed argument as a line produced by substituting FORMAT:
+    %k is replaced by the argument key, %v by its value, %% produces a
+    literal '%', and a backslash escapes the next character:
+        # Parse an argument named "value"
+        parser=$(argparsh add_arg value)
+
+        # Will print "value := 42" for `prog.sh 42`
+        eval $(argparsh parse $parser --custom-format "%k := %v" -- "$@")
+
+    Note that --custom-format is a raw output mode; it cannot be combined
+    with --prefix, --export, --local, or --name (and it overrides --format).
+
+--custom-error FORMAT
+    controls the line printed to stdout when parsing stops (help, version,
+    or a parse error). %e is replaced by the exit code (0 for help/version,
+    2 for a parse error); by default this line is "exit <code>":
+        # Prints "status=0" instead of "exit 0" on help/version
+        argparsh parse $parser --custom-error "status=%e" -- -h
+
+    Can be combined with any --format (including --custom-format).
+
 In any mode on failure to parse arguments for any reason (including
 if the arguments invoked the help text), stdout will contain a
 single line with the contents "exit <code>". And argparsh will exit
@@ -376,11 +401,29 @@ enum Command {
         #[arg(short, long)]
         name: Option<String>,
 
+        /// Custom output format string: %k -> key, %v -> value, %% -> literal '%',
+        /// and '\' escapes the next character. Overrides --format.
+        #[arg(
+            long,
+            conflicts_with = "prefix",
+            conflicts_with = "export",
+            conflicts_with = "local",
+            conflicts_with = "name"
+        )]
+        custom_format: Option<String>,
+
+        /// Format for the exit-code line (help/version/error) printed to
+        /// stdout: %e is replaced by the exit code (0 or 2). Defaults to
+        /// "exit <code>".
+        #[arg(long)]
+        custom_error: Option<String>,
+
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Option<Vec<String>>,
     },
 }
 
+#[allow(clippy::too_many_arguments)] // mirrors the Parse command's fields
 fn parse(
     parser: String,
     args: Option<Vec<String>>,
@@ -389,7 +432,14 @@ fn parse(
     export: bool,
     local: bool,
     name: Option<String>,
+    custom_format: Option<String>,
+    custom_error: Option<String>,
 ) {
+    let format = if let Some(fmt) = custom_format {
+        Format::Custom(fmt)
+    } else {
+        format
+    };
     let mut actions = parser.split(DELIMITER);
     actions.next();
 
@@ -454,6 +504,12 @@ fn parse(
                 let json = serde_json::to_string_pretty(&value).unwrap();
                 println!("{}", json);
             }
+            Format::Custom(fmt) => {
+                let tokens = parse_format_string(&fmt, false).expect("validated at startup");
+                for (k, v) in &kv {
+                    println!("{}", render_format(&tokens, k, &format_value(v), ""));
+                }
+            }
             Format::Shell => {
                 let prefix_str = prefix.unwrap_or_default();
                 let export_str = if export {
@@ -484,19 +540,106 @@ fn parse(
                     .unwrap();
             }
             eprint!("{}", help_text);
-            println!("exit 0");
+            println!("{}", exit_line(custom_error.as_deref(), "0"));
             std::process::exit(0);
         }
         argparse::ParseResult::Version(v) => {
             eprintln!("{}", v);
-            println!("exit 0");
+            println!("{}", exit_line(custom_error.as_deref(), "0"));
             std::process::exit(0);
         }
         argparse::ParseResult::Error(err) => {
             eprintln!("{}\n{}", parser_model.usage_line(), err);
-            println!("exit 2");
+            println!("{}", exit_line(custom_error.as_deref(), "2"));
             std::process::exit(2);
         }
+    }
+}
+
+/// A single piece of a parsed custom format string
+#[derive(Debug, Clone, PartialEq)]
+enum FmtToken {
+    /// The argument key
+    Key,
+    /// The argument value
+    Value,
+    /// The exit code
+    Code,
+    /// Literal text
+    Literal(String),
+}
+
+/// Parse a custom format string into tokens.
+///
+/// `%k` -> key, `%v` -> value, `%e` -> exit code (only when `allow_code`
+/// is set), `%%` -> literal '%', and a backslash escapes the next
+/// character (e.g. `\k` -> literal 'k').
+fn parse_format_string(s: &str, allow_code: bool) -> Result<Vec<FmtToken>, String> {
+    let mut tokens = Vec::new();
+    let mut literal = String::new();
+    let mut chars = s.chars();
+    let flush = |literal: &mut String, tokens: &mut Vec<FmtToken>| {
+        if !literal.is_empty() {
+            tokens.push(FmtToken::Literal(std::mem::take(literal)));
+        }
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '%' => match chars.next() {
+                Some('k') => {
+                    flush(&mut literal, &mut tokens);
+                    tokens.push(FmtToken::Key);
+                }
+                Some('v') => {
+                    flush(&mut literal, &mut tokens);
+                    tokens.push(FmtToken::Value);
+                }
+                Some('e') if allow_code => {
+                    flush(&mut literal, &mut tokens);
+                    tokens.push(FmtToken::Code);
+                }
+                Some('%') => literal.push('%'),
+                Some(other) => {
+                    return Err(format!("invalid format specifier: '%{other}'"));
+                }
+                None => return Err("trailing '%' in format string".to_string()),
+            },
+            '\\' => match chars.next() {
+                Some(escaped) => literal.push(escaped),
+                None => return Err("trailing '\\' in format string".to_string()),
+            },
+            c => literal.push(c),
+        }
+    }
+    flush(&mut literal, &mut tokens);
+    Ok(tokens)
+}
+
+/// Render format tokens, substituting key, value, and exit code.
+fn render_format(tokens: &[FmtToken], key: &str, value: &str, code: &str) -> String {
+    let mut out = String::new();
+    for token in tokens {
+        match token {
+            FmtToken::Key => out.push_str(key),
+            FmtToken::Value => out.push_str(value),
+            FmtToken::Code => out.push_str(code),
+            FmtToken::Literal(s) => out.push_str(s),
+        }
+    }
+    out
+}
+
+/// The line printed to stdout when parsing stops (help/version/error),
+/// either the custom `--custom-error` format or the default "exit <code>".
+fn exit_line(custom_error: Option<&str>, code: &str) -> String {
+    match custom_error {
+        Some(fmt) => render_format(
+            &parse_format_string(fmt, true).expect("validated at startup"),
+            "",
+            "",
+            code,
+        ),
+        None => format!("exit {code}"),
     }
 }
 
@@ -525,9 +668,33 @@ fn main() {
             export,
             local,
             name,
+            custom_format,
+            custom_error,
             args,
         } => {
-            parse(parser, args, format, prefix, export, local, name);
+            if let Some(fmt) = &custom_format {
+                if let Err(e) = parse_format_string(fmt, false) {
+                    eprintln!("argparsh: invalid --custom-format: {e}");
+                    std::process::exit(2);
+                }
+            }
+            if let Some(fmt) = &custom_error {
+                if let Err(e) = parse_format_string(fmt, true) {
+                    eprintln!("argparsh: invalid --custom-error: {e}");
+                    std::process::exit(2);
+                }
+            }
+            parse(
+                parser,
+                args,
+                format,
+                prefix,
+                export,
+                local,
+                name,
+                custom_format,
+                custom_error,
+            );
         }
         _ => {
             let json = bitcode::encode(&cli.command);

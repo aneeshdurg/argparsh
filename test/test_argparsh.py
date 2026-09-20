@@ -201,3 +201,103 @@ def test_multiple_subparsers():
         "myarg": "bar",
         "baz": "baz0",
     }
+
+
+def test_custom_format():
+    parser = subprocess.check_output(["argparsh", "new", "myprog"])
+    parser += subprocess.check_output(
+        ["argparsh", "add_arg", "--helptext", "arg0 help test", "arg0"]
+    )
+
+    def parse_custom(fmt, args):
+        p = subprocess.Popen(
+            ["argparsh", "parse", parser, "--custom-format", fmt, "--"] + args,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        stdout, stderr = p.communicate()
+        return p.returncode, stdout, stderr
+
+    # %k / %v substitution with literal text
+    rc, stdout, stderr = parse_custom("%k := %v", ["hello"])
+    assert (rc, stderr) == (0, b"")
+    assert stdout == b"arg0 := hello\n"
+
+    # backslash escapes the next character, %% is a literal %
+    rc, stdout, stderr = parse_custom(r"raw \%k and %v %%", ["7"])
+    assert (rc, stderr) == (0, b"")
+    assert stdout == b"raw %k and 7 %\n"
+
+    # invalid format specifier
+    rc, stdout, stderr = parse_custom("%x", ["1"])
+    assert rc == 2
+    assert stdout == b""
+    assert b"invalid format specifier: '%x'" in stderr
+
+    # trailing backslash
+    rc, stdout, stderr = parse_custom("abc\\", ["1"])
+    assert rc == 2
+    assert b"trailing '\\'" in stderr
+
+    # cannot be combined with shell/assoc_array-only options
+    p = subprocess.Popen(
+        [
+            "argparsh",
+            "parse",
+            parser,
+            "--custom-format",
+            "%k",
+            "--prefix",
+            "p_",
+            "--",
+            "1",
+        ],
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    stdout, stderr = p.communicate()
+    assert p.returncode == 2
+    assert b"cannot be used with" in stderr
+
+
+def test_custom_error():
+    parser = subprocess.check_output(["argparsh", "new", "myprog"])
+    parser += subprocess.check_output(
+        ["argparsh", "add_arg", "--helptext", "arg0 help test", "arg0"]
+    )
+
+    def parse_custom_error(fmt, args):
+        p = subprocess.Popen(
+            ["argparsh", "parse", parser, "--custom-error", fmt, "--"] + args,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        stdout, stderr = p.communicate()
+        return p.returncode, stdout, stderr
+
+    # help invocation: exit code 0
+    rc, stdout, stderr = parse_custom_error("status=%e", ["-h"])
+    assert rc == 0
+    assert stdout == b"status=0\n"
+    assert b"usage: myprog" in stderr
+
+    # parse error: exit code 2
+    rc, stdout, stderr = parse_custom_error("status=%e", ["extra", "arg"])
+    assert rc == 2
+    assert stdout == b"status=2\n"
+    assert b"error: unrecognized arguments" in stderr
+
+    # escaping works in the error format too
+    rc, stdout, stderr = parse_custom_error(r"err\% %e", ["extra", "arg"])
+    assert rc == 2
+    assert stdout == b"err% 2\n"
+
+    # default is unchanged when --custom-error is not supplied
+    p = subprocess.Popen(
+        ["argparsh", "parse", parser, "--", "-h"],
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    stdout, stderr = p.communicate()
+    assert p.returncode == 0
+    assert stdout == b"exit 0\n"
