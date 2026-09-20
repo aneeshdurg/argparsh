@@ -80,6 +80,7 @@ git clone https://github.com/aneeshdurg/argparsh.git
 cd argparsh
 cargo install --path .
 ```
+Or, go to releases and download pre-built binaries.
 
 ## Similar Works
 
