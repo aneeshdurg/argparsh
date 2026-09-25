@@ -82,6 +82,25 @@ cargo install --path .
 ```
 Or, go to releases and download pre-built binaries.
 
+### argparsh-nostd-demo
+
+`nostd-demo/` contains `argparsh-nostd-demo`, a tiny `#![no_std]` binary
+(about 70KB static, compared to about 1.6MB) that implements only the
+parser-building commands (`new`, `add_arg`, `add_subparser`, `add_subcommand`,
+`set_defaults`). Its output is byte-for-byte what `argparsh` emits, so you can
+build the parser with it and still use `argparsh parse`. It does not
+support `parse` and prints no help text. Invalid arguments still get a short
+error and exit status 2.
+
+```sh
+cargo install --path nostd-demo
+parser=$({
+  argparsh-nostd-demo new prog
+  argparsh-nostd-demo add_arg --type int -- -n
+})
+eval $(argparsh parse $parser -- "$@")
+```
+
 ## Similar Works
 
 argparsh differs from previous attempts at improving shell argument parsing by

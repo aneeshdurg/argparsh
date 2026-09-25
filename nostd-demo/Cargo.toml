@@ -1,0 +1,28 @@
+[package]
+name = "argparsh-nostd-demo"
+version = "0.1.0"
+edition = "2021"
+authors = ["Aneesh Durg <aneeshdurg17@gmail.com>"]
+license = "MIT"
+description = "no_std builder for argparsh parsers (emits bitcode for `argparsh parse`)"
+publish = false
+
+# Standalone workspace: keeps this crate out of argparsh's dependency graph so
+# that bitcode is resolved without its `std` feature.
+[workspace]
+
+[dependencies]
+# Must stay in lockstep with argparsh's bitcode version so the encoded parser
+# is readable by `argparsh parse`.
+bitcode = { version = "=0.6.3", default-features = false, features = ["derive"] }
+bitcode_derive = "=0.6.3"
+libc = { version = "0.2", default-features = false }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"

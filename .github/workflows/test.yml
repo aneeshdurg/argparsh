@@ -26,6 +26,7 @@ jobs:
           # target, but this job only has the native gnu target installed and we
           # want to keep testing the gnu build.
           cargo install --path . --target x86_64-unknown-linux-gnu
+          cargo install --path nostd-demo --target x86_64-unknown-linux-gnu
 
       - name: "run tests"
         run: |
