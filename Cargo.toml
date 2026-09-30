@@ -1,6 +1,6 @@
 [package]
 name = "argparsh"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2021"
 authors = ["Aneesh Durg <aneeshdurg17@gmail.com>"]
 license = "MIT"
@@ -27,3 +27,10 @@ clap = { version = "4.5.21", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 urlencoding = "2.1.3"
+
+[profile.release]
+opt-level = "z"     # Optimize for the smallest possible binary size ("s" is also good)
+strip = true        # Automatically strip symbols and debug info from the binary
+lto = true          # Enable Link-Time Optimization (cross-crate optimizations)
+codegen-units = 1   # Reduce parallel code generation units (allows better size optimization)
+panic = "abort"     # Remove panic unwinding overhead (removes backtrace sta
