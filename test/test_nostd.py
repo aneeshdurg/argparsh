@@ -1,18 +1,19 @@
-"""Differential tests: argparsh-nostd-demo must emit exactly what argparsh does.
+"""Tests for the no_std argparsh front door and heavy runtime delegation.
 
-The binary is located via $ARGPARSH_NOSTD, falling back to argparsh-nostd-demo
-on $PATH; the tests are skipped if neither is available.
+The two installed binaries are compared for parser-building commands.
 """
 
 import json
-import os
 import shutil
 import subprocess
 
 import pytest
 
-NOSTD = os.environ.get("ARGPARSH_NOSTD") or shutil.which("argparsh-nostd-demo")
-pytestmark = pytest.mark.skipif(NOSTD is None, reason="argparsh-nostd-demo not found")
+FRONT = shutil.which("argparsh")
+HEAVY = shutil.which("argparsh-heavy")
+pytestmark = pytest.mark.skipif(
+    FRONT is None or HEAVY is None, reason="argparsh binaries not found"
+)
 
 
 def run(binary, args):
@@ -129,32 +130,39 @@ REJECTED = [
 
 @pytest.mark.parametrize("args", ACCEPTED, ids=lambda a: " ".join(a) or "<none>")
 def test_matches_argparsh(args):
-    expected = run("argparsh", args)
+    expected = run(HEAVY, args)
     assert expected.returncode == 0, expected.stderr
-    actual = run(NOSTD, args)
+    actual = run(FRONT, args)
     assert actual.returncode == 0, actual.stderr
     assert actual.stdout == expected.stdout
 
 
 @pytest.mark.parametrize("args", REJECTED, ids=lambda a: " ".join(a) or "<none>")
 def test_rejects_like_argparsh(args):
-    expected = run("argparsh", args)
+    expected = run(HEAVY, args)
     assert expected.returncode == 2
-    actual = run(NOSTD, args)
+    actual = run(FRONT, args)
     assert actual.returncode == 2
     assert actual.stdout == b""
     assert actual.stderr != b""
 
 
-@pytest.mark.parametrize("args", [["parse", "&x", "--"], ["--help"], ["add_arg", "-h"]])
-def test_unsupported(args):
-    actual = run(NOSTD, args)
-    assert actual.returncode == 2
-    assert actual.stdout == b""
+@pytest.mark.parametrize(
+    ("args", "status"),
+    [(["parse", "&x", "--"], 2), (["--help"], 0), (["add_arg", "-h"], 0)],
+)
+def test_delegates_to_heavy(args, status):
+    actual = run(FRONT, args)
+    expected = run(HEAVY, args)
+    assert actual.returncode == status
+    assert actual.returncode == expected.returncode
+    # The front door keeps its public name in clap's usage text after exec.
+    assert actual.stdout == expected.stdout.replace(b"argparsh-heavy", b"argparsh")
+    assert actual.stderr == expected.stderr.replace(b"argparsh-heavy", b"argparsh")
 
 
 def test_parse_with_argparsh():
-    """A parser built by argparsh-nostd-demo is usable by `argparsh parse`."""
+    """A parser built by the fast front door is usable by the full CLI."""
     commands = [
         ["new", "prog", "-d", "demo"],
         ["add_arg", "--choice", "a", "--choice", "b", "--", "letter"],
@@ -171,14 +179,14 @@ def test_parse_with_argparsh():
     def parse(binary):
         parser = b"".join(run(binary, args).stdout for args in commands)
         result = subprocess.run(
-            ["argparsh", "parse", parser, "--format", "json", "--", *cli],
+            [binary, "parse", parser, "--format", "json", "--", *cli],
             capture_output=True,
             check=True,
         )
         return json.loads(result.stdout)
 
-    parsed = parse(NOSTD)
-    assert parsed == parse("argparsh")
+    parsed = parse(FRONT)
+    assert parsed == parse(HEAVY)
     assert parsed["letter"] == "a"
     assert parsed["interval"] == 5
     assert parsed["qux"] == "Q"

@@ -1,9 +1,10 @@
-//! A `#![no_std]` build of argparsh's parser-construction commands.
+//! The `#![no_std]` front door for argparsh's parser-construction commands.
 //!
 //! This binary supports `new`, `add_arg`, `add_subparser`, `add_subcommand`
 //! and `set_defaults`, and emits exactly the same `&<urlencoded bitcode>`
 //! chunks as `argparsh`, so its output can be fed to `argparsh parse`.
-//! It does not support `parse`, and never prints help text.
+//! Commands that need parsing or help are delegated to the adjacent
+//! `argparsh-heavy` executable.
 //!
 //! Command-line handling mirrors the clap configuration in argparsh's
 //! `src/main.rs`; the data types below must stay field-for-field identical to
@@ -20,6 +21,8 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{c_char, c_int, CStr};
 
 const DELIMITER: u8 = b'&';
+static mut ORIGINAL_ARGC: c_int = 0;
+static mut ORIGINAL_ARGV: *const *const c_char = core::ptr::null();
 
 // ---------------------------------------------------------------------------
 // Runtime glue: allocator, panic handler, I/O
@@ -75,7 +78,7 @@ static ALLOCATOR: Malloc = Malloc;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    write_all(2, b"argparsh-nostd-demo: internal error\n");
+    write_all(2, b"argparsh: internal error\n");
     unsafe { libc::abort() }
 }
 
@@ -296,8 +299,59 @@ impl Matches {
     }
 }
 
+/// Replace this process with the full CLI next to the front door executable.
+/// `/proc/self/exe` gives the real executable path even when argparsh was
+/// invoked through PATH or a symlink. PATH lookup is retained as a fallback.
+fn exec_heavy(argc: c_int, argv: *const *const c_char) -> ! {
+    let mut executable = alloc::vec![0u8; 4096];
+    let proc_exe = b"/proc/self/exe\0";
+    let len = unsafe {
+        libc::readlink(
+            proc_exe.as_ptr() as *const c_char,
+            executable.as_mut_ptr() as *mut c_char,
+            executable.len(),
+        )
+    };
+
+    let mut heavy_path = if len > 0 && (len as usize) < executable.len() {
+        executable.truncate(len as usize);
+        match executable.iter().rposition(|b| *b == b'/') {
+            Some(slash) => {
+                executable.truncate(slash + 1);
+                executable
+            }
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+    heavy_path.extend_from_slice(b"argparsh-heavy");
+    heavy_path.push(0);
+
+    let mut heavy_argv = Vec::with_capacity(argc as usize + 1);
+    // Preserve the front-door name in usage text when dispatching through
+    // argparsh; direct calls to argparsh-heavy keep their own name.
+    heavy_argv.push(unsafe { *argv });
+    for i in 1..argc as usize {
+        heavy_argv.push(unsafe { *argv.add(i) });
+    }
+    heavy_argv.push(core::ptr::null());
+
+    unsafe {
+        // Try the sibling path first, then allow installations that split the
+        // binaries across PATH entries to work as well.
+        libc::execv(heavy_path.as_ptr() as *const c_char, heavy_argv.as_ptr());
+        libc::execvp(
+            b"argparsh-heavy\0".as_ptr() as *const c_char,
+            heavy_argv.as_ptr(),
+        );
+    }
+    write_all(2, b"argparsh: could not execute argparsh-heavy\n");
+    unsafe { libc::exit(127) }
+}
+
 fn no_help() -> ! {
-    die(&["help is not available in argparsh-nostd-demo; use `argparsh --help`"])
+    unsafe { exec_heavy(ORIGINAL_ARGC, ORIGINAL_ARGV) }
 }
 
 fn value_required(sub: &SubSpec, i: usize) -> ! {
@@ -726,6 +780,10 @@ fn urlencode_into(data: &[u8], out: &mut Vec<u8>) {
 
 #[no_mangle]
 extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
+    unsafe {
+        ORIGINAL_ARGC = argc;
+        ORIGINAL_ARGV = argv;
+    }
     let args: Vec<&str> = (1..argc as usize)
         .map(|i| {
             let arg = unsafe { CStr::from_ptr(*argv.add(i)) };
@@ -737,17 +795,26 @@ extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
         .collect();
 
     let Some((&sub, rest)) = args.split_first() else {
-        die(&["a subcommand is required (new, add_arg, add_subparser, add_subcommand, set_defaults)"]);
+        exec_heavy(argc, argv);
     };
+    if sub == "parse"
+        || sub == "help"
+        || !matches!(
+            sub,
+            "new" | "add_arg" | "add_subparser" | "add_subcommand" | "set_defaults"
+        )
+        || rest.iter().any(|arg| matches!(*arg, "-h" | "--help"))
+    {
+        exec_heavy(argc, argv);
+    }
     let cmd = match sub {
         "new" => cmd_new(rest),
         "add_arg" => cmd_add_arg(rest),
         "add_subparser" => cmd_add_subparser(rest),
         "add_subcommand" => cmd_add_subcommand(rest),
         "set_defaults" => cmd_set_defaults(rest),
-        "parse" => die(&["argparsh-nostd-demo does not support `parse`; use `argparsh parse`"]),
-        "-h" | "--help" | "help" => no_help(),
-        _ => die(&["unrecognized subcommand '", sub, "'"]),
+        "-h" | "--help" => exec_heavy(argc, argv),
+        _ => unreachable!(),
     };
 
     let encoded = bitcode::encode(&cmd);

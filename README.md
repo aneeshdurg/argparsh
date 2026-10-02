@@ -65,7 +65,10 @@ output formats (e.g. parsing CLI arguments into an associative array). The
 `examples` directory has a few other examples that show different ways to use
 `argparsh` in general.
 
-More detailed help/documentation is available by running `argparsh <subcommand> --help`
+More detailed help/documentation is available by running `argparsh <subcommand> --help`.
+The `argparsh` front door handles parser construction in a small `no_std`
+binary. Parsing and help requests are handed off to the adjacent
+`argparsh-heavy` binary, which contains the full runtime.
 
 ## Installation
 
@@ -82,21 +85,20 @@ cargo install --path .
 ```
 Or, go to releases and download pre-built binaries.
 
-### argparsh-nostd-demo
+### Fast front door
 
-`nostd-demo/` contains `argparsh-nostd-demo`, a tiny `#![no_std]` binary
-(about 70KB static, compared to about 1.6MB) that implements only the
-parser-building commands (`new`, `add_arg`, `add_subparser`, `add_subcommand`,
-`set_defaults`). Its output is byte-for-byte what `argparsh` emits, so you can
-build the parser with it and still use `argparsh parse`. It does not
-support `parse` and prints no help text. Invalid arguments still get a short
-error and exit status 2.
+Both binaries are installed together by `cargo install argparsh` (or
+`cargo install --path .`). The `argparsh` binary is the small `#![no_std]`
+front door (about 70KB static, compared to about 1.6MB for the full runtime).
+It handles parser construction (`new`, `add_arg`, `add_subparser`,
+`add_subcommand`, `set_defaults`) directly. `parse` and help requests exec the
+neighboring `argparsh-heavy` binary, so normal construction commands do not
+load the full runtime.
 
 ```sh
-cargo install --path nostd-demo
 parser=$({
-  argparsh-nostd-demo new prog
-  argparsh-nostd-demo add_arg --type int -- -n
+  argparsh new prog
+  argparsh add_arg --type int -- -n
 })
 eval $(argparsh parse $parser -- "$@")
 ```

@@ -43,6 +43,7 @@ jobs:
           staging="argparsh-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir "$staging"
           cp target/${{ matrix.target }}/release/argparsh "$staging/"
+          cp target/${{ matrix.target }}/release/argparsh-heavy "$staging/"
           cp README.md LICENSE "$staging/"
           tar czf "$staging.tar.gz" "$staging"
 
