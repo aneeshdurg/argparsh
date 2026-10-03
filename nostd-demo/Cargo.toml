@@ -7,22 +7,19 @@ license = "MIT"
 description = "no_std builder for argparsh parsers (emits bitcode for `argparsh parse`)"
 publish = false
 
-# Standalone workspace: keeps this crate out of argparsh's dependency graph so
-# that bitcode is resolved without its `std` feature.
-[workspace]
+[[bin]]
+# The package is "argparsh-nostd-demo" (the workspace root owns the name
+# "argparsh"), but the binary it produces is the real front door.
+name = "argparsh"
+path = "src/main.rs"
 
 [dependencies]
 # Must stay in lockstep with argparsh's bitcode version so the encoded parser
 # is readable by `argparsh parse`.
 bitcode = { version = "=0.6.3", default-features = false, features = ["derive"] }
 bitcode_derive = "=0.6.3"
-libc = { version = "0.2", default-features = false }
 
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-lto = true
-codegen-units = 1
-opt-level = "s"
+# `[profile]` tables here are ignored (Cargo only reads them from the
+# workspace root's Cargo.toml) but the root's `[profile.release]` already
+# sets lto/codegen-units=1/opt-level=z/panic=abort, which covers this crate
+# too.

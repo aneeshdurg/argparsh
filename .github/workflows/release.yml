@@ -37,12 +37,25 @@ jobs:
       - name: "build release binary"
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: "build front door (x86_64 only)"
+        # The freestanding `argparsh` front door (nostd-demo/) hand-rolls its
+        # own x86_64 _start/syscalls and can't be built for aarch64 yet (see
+        # nostd-demo/src/main.rs's compile_error!). It's also a separate
+        # workspace member with its own linker config that can't be built in
+        # the same invocation as argparsh-heavy above, so it needs its own
+        # step, run from inside nostd-demo/ so that config is actually picked
+        # up (--manifest-path doesn't do this).
+        if: ${{ !startsWith(matrix.target, 'aarch64') }}
+        run: (cd nostd-demo && cargo build --release --target ${{ matrix.target }})
+
       - name: "package artifact"
         run: |
           set -euo pipefail
           staging="argparsh-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir "$staging"
-          cp target/${{ matrix.target }}/release/argparsh "$staging/"
+          if [ -f "target/${{ matrix.target }}/release/argparsh" ]; then
+            cp "target/${{ matrix.target }}/release/argparsh" "$staging/"
+          fi
           cp target/${{ matrix.target }}/release/argparsh-heavy "$staging/"
           cp README.md LICENSE "$staging/"
           tar czf "$staging.tar.gz" "$staging"

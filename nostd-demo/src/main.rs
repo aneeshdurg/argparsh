@@ -6,11 +6,19 @@
 //! Commands that need parsing or help are delegated to the adjacent
 //! `argparsh-heavy` executable.
 //!
+//! There is no C runtime at all here: `_start` below is the real ELF entry
+//! point, every syscall is issued directly with inline `syscall`, and the
+//! heap is a single 4KiB arena obtained from the kernel with one `brk` call
+//! and then bump-allocated (see [`sys`] and [`BumpAlloc`]).
+//!
 //! Command-line handling mirrors the clap configuration in argparsh's
 //! `src/main.rs`; the data types below must stay field-for-field identical to
 //! the ones there, since bitcode's encoding depends on their exact shape.
 #![no_std]
 #![no_main]
+
+#[cfg(not(target_arch = "x86_64"))]
+compile_error!("the hand-rolled _start/syscalls here are x86_64 Linux only");
 
 extern crate alloc;
 
@@ -23,63 +31,173 @@ use core::ffi::{c_char, c_int, CStr};
 const DELIMITER: u8 = b'&';
 static mut ORIGINAL_ARGC: c_int = 0;
 static mut ORIGINAL_ARGV: *const *const c_char = core::ptr::null();
+static mut ORIGINAL_ENVP: *const *const c_char = core::ptr::null();
+
+// ---------------------------------------------------------------------------
+// Raw syscalls (x86_64 Linux calling convention: number in rax, args in rdi,
+// rsi, rdx, r10, r8, r9; syscall clobbers rcx and r11; result in rax, with
+// negative values in `-errno..0` signaling failure).
+// ---------------------------------------------------------------------------
+
+mod sys {
+    use core::arch::asm;
+    use core::ffi::c_char;
+
+    const SYS_WRITE: i64 = 1;
+    const SYS_BRK: i64 = 12;
+    const SYS_EXECVE: i64 = 59;
+    const SYS_EXIT_GROUP: i64 = 231;
+    const SYS_READLINK: i64 = 89;
+
+    pub const EINTR: i64 = 4;
+
+    #[inline(always)]
+    unsafe fn syscall1(n: i64, a1: i64) -> i64 {
+        let ret;
+        asm!(
+            "syscall",
+            inlateout("rax") n => ret,
+            in("rdi") a1,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack),
+        );
+        ret
+    }
+
+    #[inline(always)]
+    unsafe fn syscall3(n: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+        let ret;
+        asm!(
+            "syscall",
+            inlateout("rax") n => ret,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack),
+        );
+        ret
+    }
+
+    pub unsafe fn write(fd: i32, buf: *const u8, len: usize) -> i64 {
+        syscall3(SYS_WRITE, fd as i64, buf as i64, len as i64)
+    }
+
+    /// `addr = 0` queries the current break instead of moving it.
+    pub unsafe fn brk(addr: usize) -> usize {
+        syscall1(SYS_BRK, addr as i64) as usize
+    }
+
+    pub unsafe fn readlink(path: *const u8, buf: *mut u8, bufsiz: usize) -> i64 {
+        syscall3(SYS_READLINK, path as i64, buf as i64, bufsiz as i64)
+    }
+
+    pub unsafe fn execve(
+        path: *const u8,
+        argv: *const *const c_char,
+        envp: *const *const c_char,
+    ) -> i64 {
+        syscall3(SYS_EXECVE, path as i64, argv as i64, envp as i64)
+    }
+
+    pub fn exit_group(code: i32) -> ! {
+        unsafe {
+            syscall1(SYS_EXIT_GROUP, code as i64);
+        }
+        // Unreachable: exit_group never returns. Loop instead of claiming UB.
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Entry point: the kernel jumps straight here with no C runtime behind us.
+// At process start %rsp points at argc, followed by argv[0..argc], a NULL,
+// envp[0..], a NULL, and the aux vector (which we don't need).
+// ---------------------------------------------------------------------------
+
+core::arch::global_asm!(
+    ".global _start",
+    "_start:",
+    "xor ebp, ebp",   // mark the deepest frame, by convention
+    "mov rdi, rsp",   // rdi = &argc, the one argument rust_entry wants
+    "and rsp, -16",   // satisfy the ABI's 16-byte alignment before `call`
+    "call rust_entry",
+    "ud2",            // rust_entry never returns
+);
+
+#[no_mangle]
+unsafe extern "C" fn rust_entry(stack: *const usize) -> ! {
+    let argc = *stack as c_int;
+    let argv = stack.add(1) as *const *const c_char;
+    let envp = argv.add(argc as usize + 1);
+
+    init_arena();
+
+    ORIGINAL_ARGC = argc;
+    ORIGINAL_ARGV = argv;
+    ORIGINAL_ENVP = envp;
+
+    sys::exit_group(run(argc, argv))
+}
 
 // ---------------------------------------------------------------------------
 // Runtime glue: allocator, panic handler, I/O
 // ---------------------------------------------------------------------------
 
-// The libc crate only emits link directives when built as part of std, so
-// link the C library (which also provides the process entry point) ourselves.
-#[link(name = "c")]
-extern "C" {}
+/// Bytes handed out so far; never reset, since this allocator never frees.
+static mut ARENA_OFFSET: usize = 0;
+/// Base address of the arena, filled in by `init_arena` from `brk`.
+static mut ARENA_BASE: *mut u8 = core::ptr::null_mut();
+const ARENA_SIZE: usize = 4096;
 
-struct Malloc;
+/// Grow the break by exactly one arena's worth of bytes. Called once, before
+/// any allocation can happen.
+unsafe fn init_arena() {
+    let base = sys::brk(0);
+    let grown = sys::brk(base + ARENA_SIZE);
+    if grown < base + ARENA_SIZE {
+        write_all(2, b"argparsh: brk failed to grow the heap\n");
+        sys::exit_group(1);
+    }
+    ARENA_BASE = base as *mut u8;
+}
 
-/// Alignment guaranteed by malloc on the platforms we care about.
-#[cfg(target_pointer_width = "64")]
-const MIN_ALIGN: usize = 16;
-#[cfg(not(target_pointer_width = "64"))]
-const MIN_ALIGN: usize = 8;
+struct BumpAlloc;
 
-unsafe impl GlobalAlloc for Malloc {
+unsafe impl GlobalAlloc for BumpAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.align() <= MIN_ALIGN && layout.align() <= layout.size() {
-            libc::malloc(layout.size()) as *mut u8
-        } else {
-            let mut out = core::ptr::null_mut();
-            let align = layout.align().max(core::mem::size_of::<usize>());
-            if libc::posix_memalign(&mut out, align, layout.size()) != 0 {
-                return core::ptr::null_mut();
-            }
-            out as *mut u8
+        let align = layout.align();
+        let aligned = (ARENA_OFFSET + align - 1) & !(align - 1);
+        let end = match aligned.checked_add(layout.size()) {
+            Some(end) => end,
+            None => return core::ptr::null_mut(),
+        };
+        if end > ARENA_SIZE {
+            // Out of arena space: return null so `alloc`'s default handler aborts.
+            return core::ptr::null_mut();
         }
+        ARENA_OFFSET = end;
+        ARENA_BASE.add(aligned)
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        libc::free(ptr as *mut libc::c_void);
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if layout.align() <= MIN_ALIGN && layout.align() <= new_size {
-            return libc::realloc(ptr as *mut libc::c_void, new_size) as *mut u8;
-        }
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
-        let new_ptr = self.alloc(new_layout);
-        if !new_ptr.is_null() {
-            core::ptr::copy_nonoverlapping(ptr, new_ptr, layout.size().min(new_size));
-            self.dealloc(ptr, layout);
-        }
-        new_ptr
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        // No free: the arena is reclaimed in one shot when the process exits.
     }
 }
 
 #[global_allocator]
-static ALLOCATOR: Malloc = Malloc;
+static ALLOCATOR: BumpAlloc = BumpAlloc;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     write_all(2, b"argparsh: internal error\n");
-    unsafe { libc::abort() }
+    // Mimics abort()'s conventional 128+SIGABRT exit status without actually
+    // raising a signal; nothing here needs a core dump.
+    sys::exit_group(134)
 }
 
 /// The precompiled `alloc` crate references this symbol from its unwind tables,
@@ -88,11 +206,75 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[no_mangle]
 extern "C" fn rust_eh_personality() {}
 
+// LLVM lowers struct copies, slice comparisons, etc. to calls to these; a C
+// library normally supplies them, but we're not linking one.
+use core::ffi::c_void;
+
+#[no_mangle]
+unsafe extern "C" fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
+    let (dest, src) = (dest as *mut u8, src as *const u8);
+    for i in 0..n {
+        *dest.add(i) = *src.add(i);
+    }
+    dest as *mut c_void
+}
+
+#[no_mangle]
+unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
+    let (dest, src) = (dest as *mut u8, src as *const u8);
+    if (dest as usize) < (src as usize) {
+        for i in 0..n {
+            *dest.add(i) = *src.add(i);
+        }
+    } else {
+        for i in (0..n).rev() {
+            *dest.add(i) = *src.add(i);
+        }
+    }
+    dest as *mut c_void
+}
+
+#[no_mangle]
+unsafe extern "C" fn memset(dest: *mut c_void, c: i32, n: usize) -> *mut c_void {
+    let dest = dest as *mut u8;
+    for i in 0..n {
+        *dest.add(i) = c as u8;
+    }
+    dest as *mut c_void
+}
+
+#[no_mangle]
+unsafe extern "C" fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32 {
+    let (a, b) = (a as *const u8, b as *const u8);
+    for i in 0..n {
+        let (x, y) = (*a.add(i), *b.add(i));
+        if x != y {
+            return x as i32 - y as i32;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+unsafe extern "C" fn bcmp(a: *const c_void, b: *const c_void, n: usize) -> i32 {
+    memcmp(a, b, n)
+}
+
+// `core::ffi::CStr::from_ptr` calls out to this rather than scanning itself.
+#[no_mangle]
+unsafe extern "C" fn strlen(s: *const c_char) -> usize {
+    let mut n = 0;
+    while *s.add(n) != 0 {
+        n += 1;
+    }
+    n
+}
+
 fn write_all(fd: c_int, mut buf: &[u8]) -> bool {
     while !buf.is_empty() {
-        let n = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
+        let n = unsafe { sys::write(fd, buf.as_ptr(), buf.len()) };
         if n < 0 {
-            if unsafe { *libc::__errno_location() } == libc::EINTR {
+            if -n == sys::EINTR {
                 continue;
             }
             return false;
@@ -110,7 +292,7 @@ fn die(parts: &[&str]) -> ! {
     }
     msg.push('\n');
     write_all(2, msg.as_bytes());
-    unsafe { libc::exit(2) }
+    sys::exit_group(2)
 }
 
 // ---------------------------------------------------------------------------
@@ -299,19 +481,36 @@ impl Matches {
     }
 }
 
+/// Find the value of `PATH` in the environment block captured at startup.
+fn find_path_env() -> Option<&'static [u8]> {
+    unsafe {
+        let mut p = ORIGINAL_ENVP;
+        if p.is_null() {
+            return None;
+        }
+        loop {
+            let entry = *p;
+            if entry.is_null() {
+                return None;
+            }
+            let bytes = CStr::from_ptr(entry).to_bytes();
+            if let Some(rest) = bytes.strip_prefix(b"PATH=") {
+                return Some(rest);
+            }
+            p = p.add(1);
+        }
+    }
+}
+
 /// Replace this process with the full CLI next to the front door executable.
 /// `/proc/self/exe` gives the real executable path even when argparsh was
 /// invoked through PATH or a symlink. PATH lookup is retained as a fallback.
 fn exec_heavy(argc: c_int, argv: *const *const c_char) -> ! {
-    let mut executable = alloc::vec![0u8; 4096];
+    // The arena is only 4KiB total, shared with argv/path-search buffers, so
+    // this can't be PATH_MAX-sized like a libc build would make it.
+    let mut executable = alloc::vec![0u8; 512];
     let proc_exe = b"/proc/self/exe\0";
-    let len = unsafe {
-        libc::readlink(
-            proc_exe.as_ptr() as *const c_char,
-            executable.as_mut_ptr() as *mut c_char,
-            executable.len(),
-        )
-    };
+    let len = unsafe { sys::readlink(proc_exe.as_ptr(), executable.as_mut_ptr(), executable.len()) };
 
     let mut heavy_path = if len > 0 && (len as usize) < executable.len() {
         executable.truncate(len as usize);
@@ -337,17 +536,32 @@ fn exec_heavy(argc: c_int, argv: *const *const c_char) -> ! {
     }
     heavy_argv.push(core::ptr::null());
 
+    let envp = unsafe { ORIGINAL_ENVP };
+
+    // Try the sibling path first, then search $PATH ourselves (there's no
+    // execvp without libc) so installations that split the binaries across
+    // PATH entries still work.
     unsafe {
-        // Try the sibling path first, then allow installations that split the
-        // binaries across PATH entries to work as well.
-        libc::execv(heavy_path.as_ptr() as *const c_char, heavy_argv.as_ptr());
-        libc::execvp(
-            b"argparsh-heavy\0".as_ptr() as *const c_char,
-            heavy_argv.as_ptr(),
-        );
+        sys::execve(heavy_path.as_ptr(), heavy_argv.as_ptr(), envp);
+    }
+    if let Some(path_var) = find_path_env() {
+        for dir in path_var.split(|&b| b == b':') {
+            let mut candidate = Vec::with_capacity(dir.len() + 16);
+            if dir.is_empty() {
+                candidate.push(b'.');
+            } else {
+                candidate.extend_from_slice(dir);
+            }
+            candidate.push(b'/');
+            candidate.extend_from_slice(b"argparsh-heavy");
+            candidate.push(0);
+            unsafe {
+                sys::execve(candidate.as_ptr(), heavy_argv.as_ptr(), envp);
+            }
+        }
     }
     write_all(2, b"argparsh: could not execute argparsh-heavy\n");
-    unsafe { libc::exit(127) }
+    sys::exit_group(127)
 }
 
 fn no_help() -> ! {
@@ -778,12 +992,7 @@ fn urlencode_into(data: &[u8], out: &mut Vec<u8>) {
     }
 }
 
-#[no_mangle]
-extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    unsafe {
-        ORIGINAL_ARGC = argc;
-        ORIGINAL_ARGV = argv;
-    }
+fn run(argc: c_int, argv: *const *const c_char) -> c_int {
     let args: Vec<&str> = (1..argc as usize)
         .map(|i| {
             let arg = unsafe { CStr::from_ptr(*argv.add(i)) };

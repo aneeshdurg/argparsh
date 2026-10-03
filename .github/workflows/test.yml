@@ -26,6 +26,13 @@ jobs:
           # target, but this job only has the native gnu target installed and we
           # want to keep testing the gnu build.
           cargo install --path . --target x86_64-unknown-linux-gnu
+          # The freestanding `argparsh` front door is a separate workspace
+          # member with its own linker config (no libc, custom _start) that
+          # can't be built in the same `cargo build`/`install` invocation as
+          # argparsh-heavy above (see nostd-demo/.cargo/config.toml), so it
+          # needs its own install step, run from inside nostd-demo/ so that
+          # config is actually picked up (--manifest-path doesn't do this).
+          (cd nostd-demo && cargo install --path . --target x86_64-unknown-linux-gnu)
 
       - name: "run tests"
         run: |

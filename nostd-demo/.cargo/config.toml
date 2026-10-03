@@ -1,0 +1,22 @@
+# This crate links nothing (not even a C runtime): `src/main.rs` defines its
+# own `_start` and issues syscalls directly, so the normal crt objects that
+# `rustc` would otherwise splice in (and that provide a competing `_start`
+# plus `main`/`__libc_start_main`) must be turned off, and the default
+# "static-pie" output switched to a plain static (non-PIE) binary, since
+# nothing here applies the runtime relocations a PIE load needs (plain PIC
+# code links fine into a non-PIE binary with no extra codegen changes, so
+# `relocation-model=static` isn't needed).
+#
+# `link-self-contained=no` is the only stable way to drop the crt objects,
+# but it also drops Rust's bundled lld -- harmless for the musl target
+# (which doesn't default to lld anyway) but it breaks the gnu target, whose
+# default spec passes `-fuse-ld=lld`. Force the system `ld` explicitly so
+# both targets link.
+[build]
+rustflags = [
+    "-C", "link-self-contained=no",
+    "-C", "link-arg=-nostartfiles",
+    "-C", "link-arg=-nodefaultlibs",
+    "-C", "link-arg=-no-pie",
+    "-C", "link-arg=-fuse-ld=bfd",
+]
